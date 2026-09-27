@@ -95,7 +95,7 @@ export default function WardMap({
               <Popup className="civic-custom-popup">
                 <div className="p-1 space-y-2 text-zinc-900 max-w-[260px] font-sans">
                   <div className="flex items-center justify-between gap-2 border-b border-zinc-200 pb-1.5">
-                    <span className="font-mono text-[11px] font-bold text-zinc-800">
+                    <span className="font-mono tracking-tight tabular-nums text-[11px] font-bold text-zinc-800">
                       {ticket.id}
                     </span>
                     <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-zinc-100 text-zinc-700">

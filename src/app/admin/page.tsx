@@ -134,15 +134,19 @@ export default function AdminDashboardPage() {
               <Layers className="h-4 w-4 text-zinc-500" />
             </div>
             <div className="flex items-baseline gap-2">
-              <span className="text-3xl font-extrabold text-white font-mono">
+              <span className="text-3xl font-extrabold text-white font-mono tracking-tight tabular-nums">
                 {metrics.totalGrievances}
               </span>
               <span className="text-xs text-zinc-400">logged</span>
             </div>
             <div className="text-[11px] text-zinc-500 flex gap-2">
-              <span>{metrics.openTicketsCount} active open</span>
+              <span>
+                <span className="font-mono tracking-tight tabular-nums font-semibold">{metrics.openTicketsCount}</span> active open
+              </span>
               <span>•</span>
-              <span className="text-emerald-400">{metrics.verifiedCount} verified</span>
+              <span className="text-emerald-400">
+                <span className="font-mono tracking-tight tabular-nums font-semibold">{metrics.verifiedCount}</span> verified
+              </span>
             </div>
           </div>
 
@@ -153,7 +157,7 @@ export default function AdminDashboardPage() {
               <TrendingUp className="h-4 w-4" />
             </div>
             <div className="flex items-baseline gap-2">
-              <span className="text-3xl font-extrabold text-emerald-400 font-mono">
+              <span className="text-3xl font-extrabold text-emerald-400 font-mono tracking-tight tabular-nums">
                 {metrics.autonomousVerificationRate}%
               </span>
               <span className="text-xs text-emerald-400/80">accuracy</span>
@@ -170,7 +174,7 @@ export default function AdminDashboardPage() {
               <AlertTriangle className="h-4 w-4" />
             </div>
             <div className="flex items-baseline gap-2">
-              <span className="text-3xl font-extrabold text-red-400 font-mono">
+              <span className="text-3xl font-extrabold text-red-400 font-mono tracking-tight tabular-nums">
                 {metrics.failedAuditCount}
               </span>
               <span className="text-xs text-red-400/80">rejected closures</span>
@@ -187,7 +191,7 @@ export default function AdminDashboardPage() {
               <Clock className="h-4 w-4" />
             </div>
             <div className="flex items-baseline gap-2">
-              <span className="text-3xl font-extrabold text-amber-400 font-mono">
+              <span className="text-3xl font-extrabold text-amber-400 font-mono tracking-tight tabular-nums">
                 {metrics.activeSlaBreaches}
               </span>
               <span className="text-xs text-amber-400/80">past deadline</span>
@@ -200,11 +204,11 @@ export default function AdminDashboardPage() {
 
         {/* 2. TAB NAVIGATION & WARD SELECTOR */}
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 p-2 rounded-2xl border border-zinc-800 bg-zinc-900/60">
-          {/* Tab Buttons */}
-          <div className="flex items-center gap-1 sm:gap-2">
+          {/* Tab Buttons (Horizontal scroll pills on mobile) */}
+          <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto pb-1 sm:pb-0 scrollbar-none max-w-full">
             <button
               onClick={() => setActiveTab("MAP")}
-              className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs sm:text-sm font-semibold transition-colors ${
+              className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs sm:text-sm font-semibold transition-colors whitespace-nowrap shrink-0 ${
                 activeTab === "MAP"
                   ? "bg-emerald-500 text-zinc-950 shadow-md font-bold"
                   : "text-zinc-400 hover:text-white hover:bg-zinc-800"
@@ -216,7 +220,7 @@ export default function AdminDashboardPage() {
 
             <button
               onClick={() => setActiveTab("CONTRACTORS")}
-              className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs sm:text-sm font-semibold transition-colors ${
+              className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs sm:text-sm font-semibold transition-colors whitespace-nowrap shrink-0 ${
                 activeTab === "CONTRACTORS"
                   ? "bg-emerald-500 text-zinc-950 shadow-md font-bold"
                   : "text-zinc-400 hover:text-white hover:bg-zinc-800"
@@ -228,7 +232,7 @@ export default function AdminDashboardPage() {
 
             <button
               onClick={() => setActiveTab("AUDITS")}
-              className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs sm:text-sm font-semibold transition-colors ${
+              className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs sm:text-sm font-semibold transition-colors whitespace-nowrap shrink-0 ${
                 activeTab === "AUDITS"
                   ? "bg-emerald-500 text-zinc-950 shadow-md font-bold"
                   : "text-zinc-400 hover:text-white hover:bg-zinc-800"
@@ -240,7 +244,7 @@ export default function AdminDashboardPage() {
           </div>
 
           {/* Ward Filter */}
-          <div className="flex items-center gap-2 self-end sm:self-auto px-2">
+          <div className="flex items-center gap-2 self-start sm:self-auto px-1 sm:px-2 shrink-0">
             <Filter className="h-3.5 w-3.5 text-zinc-500" />
             <select
               value={selectedWard}
@@ -333,25 +337,25 @@ export default function AdminDashboardPage() {
                         <tr key={c.contractorId} className="hover:bg-zinc-800/40 transition-colors">
                           <td className="py-3.5 px-4 font-semibold text-white">
                             <div>{c.contractorName}</div>
-                            <div className="text-[10px] text-zinc-500 font-mono">{c.contractorId}</div>
+                            <div className="text-[10px] text-zinc-500 font-mono tracking-tight tabular-nums">{c.contractorId}</div>
                           </td>
-                          <td className="py-3.5 px-4 text-center font-mono">{c.totalAssigned}</td>
-                          <td className="py-3.5 px-4 text-center font-mono">{c.totalSubmissions}</td>
-                          <td className="py-3.5 px-4 text-center font-mono text-emerald-400 font-bold">
+                          <td className="py-3.5 px-4 text-center font-mono tracking-tight tabular-nums">{c.totalAssigned}</td>
+                          <td className="py-3.5 px-4 text-center font-mono tracking-tight tabular-nums">{c.totalSubmissions}</td>
+                          <td className="py-3.5 px-4 text-center font-mono tracking-tight tabular-nums text-emerald-400 font-bold">
                             {c.verifiedCount}
                           </td>
-                          <td className="py-3.5 px-4 text-center font-mono text-red-400 font-bold">
+                          <td className="py-3.5 px-4 text-center font-mono tracking-tight tabular-nums text-red-400 font-bold">
                             {c.failedCount}
                           </td>
-                          <td className="py-3.5 px-4 text-center font-mono text-zinc-300">
+                          <td className="py-3.5 px-4 text-center font-mono tracking-tight tabular-nums text-zinc-300">
                             {c.slaComplianceRate}%
                           </td>
                           <td className="py-3.5 px-4 min-w-[140px]">
                             <div className="flex items-center gap-2">
-                              <span className="font-mono font-bold text-sm">{c.integrityScore}%</span>
+                              <span className="font-mono tracking-tight tabular-nums font-bold text-sm">{c.integrityScore}%</span>
                               <div className="flex-1 h-2 rounded-full bg-zinc-800 overflow-hidden">
                                 <div
-                                  className={`h-full rounded-full ${
+                                   className={`h-full rounded-full ${
                                     isTierA ? "bg-emerald-400" : isTierB ? "bg-amber-400" : "bg-red-500"
                                   }`}
                                   style={{ width: `${c.integrityScore}%` }}
@@ -430,7 +434,7 @@ export default function AdminDashboardPage() {
                         return (
                           <tr key={t.id} className="hover:bg-zinc-800/40 transition-colors">
                             <td className="py-3.5 px-4">
-                              <span className="font-mono font-bold text-white block">{t.id}</span>
+                              <span className="font-mono tracking-tight tabular-nums font-bold text-white block">{t.id}</span>
                               <span className="text-[11px] text-zinc-400 line-clamp-1">{t.summary}</span>
                             </td>
                             <td className="py-3.5 px-4">
@@ -455,7 +459,7 @@ export default function AdminDashboardPage() {
                                 {t.status.replace(/_/g, " ")}
                               </span>
                             </td>
-                            <td className="py-3.5 px-4 text-center font-mono font-bold">
+                            <td className="py-3.5 px-4 text-center font-mono tracking-tight tabular-nums font-bold">
                               {conf !== undefined ? `${conf}%` : "Pending"}
                             </td>
                             <td className="py-3.5 px-4 text-right">

@@ -249,37 +249,56 @@ Output strictly valid JSON matching this schema:
   "rejectionReasoning": string | null
 }`;
 
-    const modelResponse = await ai.models.generateContent({
-      model: "gemini-1.5-pro",
-      contents: [
-        {
-          role: "user",
-          parts: [
-            { text: promptMessage },
+    let rawOutputText: string | undefined;
+    const modelsToTry = ["gemini-2.5-pro", "gemini-2.5-flash"];
+    let lastError: unknown;
+
+    for (const modelName of modelsToTry) {
+      try {
+        const modelResponse = await ai.models.generateContent({
+          model: modelName,
+          contents: [
             {
-              inlineData: {
-                mimeType: originalImagePart.mimeType,
-                data: originalImagePart.data,
-              },
-            },
-            {
-              inlineData: {
-                mimeType: contractorImagePart.mimeType,
-                data: contractorImagePart.data,
-              },
+              role: "user",
+              parts: [
+                { text: promptMessage },
+                {
+                  inlineData: {
+                    mimeType: originalImagePart.mimeType,
+                    data: originalImagePart.data,
+                  },
+                },
+                {
+                  inlineData: {
+                    mimeType: contractorImagePart.mimeType,
+                    data: contractorImagePart.data,
+                  },
+                },
+              ],
             },
           ],
-        },
-      ],
-      config: {
-        systemInstruction: SYSTEM_INSTRUCTION,
-        responseMimeType: "application/json",
-      },
-    });
+          config: {
+            systemInstruction: SYSTEM_INSTRUCTION,
+            responseMimeType: "application/json",
+          },
+        });
 
-    const rawOutputText = modelResponse.text;
+        if (modelResponse.text) {
+          rawOutputText = modelResponse.text;
+          break;
+        }
+      } catch (err: unknown) {
+        lastError = err;
+        console.warn(`Audit model ${modelName} call failed, attempting fallback:`, err);
+      }
+    }
+
     if (!rawOutputText) {
-      throw new Error("Empty response received from Gemini verification model.");
+      throw new Error(
+        `Gemini verification models unavailable: ${
+          lastError instanceof Error ? lastError.message : "Empty model response"
+        }`
+      );
     }
 
     // 5. Parse and Validate Model Output via VerificationAuditSchema

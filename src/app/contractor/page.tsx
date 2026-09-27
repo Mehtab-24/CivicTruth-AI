@@ -15,6 +15,7 @@ import {
   Building2,
   X,
   FileCheck2,
+  Zap,
 } from "lucide-react";
 import { Ticket, TicketStatus } from "@/lib/store";
 import { VerificationAudit } from "@/lib/schemas/audit";
@@ -151,6 +152,44 @@ export default function ContractorPortalPage() {
       setProofImage(file);
       const url = URL.createObjectURL(file);
       setProofPreview(url);
+    }
+  };
+
+  // Quick Demo Preset Loader
+  const loadDemoPreset = async (preset: "genuine" | "fraud") => {
+    if (!activeTicket) return;
+    try {
+      const filename = preset === "genuine" ? "genuine-after.jpg" : "fraud-after.jpg";
+      const res = await fetch(`/demo/${filename}`);
+      if (!res.ok) {
+        throw new Error(`Demo asset /demo/${filename} not found.`);
+      }
+      const blob = await res.blob();
+      const file = new File([blob], filename, { type: "image/jpeg" });
+      setProofImage(file);
+      if (proofPreview) {
+        URL.revokeObjectURL(proofPreview);
+      }
+      setProofPreview(URL.createObjectURL(file));
+
+      // Simulate on-site GPS within 4m of ticket origin
+      const simulatedLat = activeTicket.location.latitude + 0.00003;
+      const simulatedLon = activeTicket.location.longitude + 0.00003;
+      setContractorLat(simulatedLat);
+      setContractorLon(simulatedLon);
+      setGpsSimulated(true);
+
+      const dist = calculateHaversineDistanceMeters(
+        { latitude: activeTicket.location.latitude, longitude: activeTicket.location.longitude },
+        { latitude: simulatedLat, longitude: simulatedLon }
+      );
+      setDistanceMeters(Math.round(dist * 10) / 10);
+
+      setAuditError(null);
+      setAuditResult(null);
+    } catch (err: unknown) {
+      console.error("Error loading demo preset:", err);
+      setAuditError("Could not load demo preset asset from /demo/");
     }
   };
 
@@ -293,7 +332,7 @@ export default function ContractorPortalPage() {
 
         {/* Work Orders Grid */}
         {isLoading ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
             {[1, 2, 3].map((i) => (
               <div key={i} className="h-80 rounded-2xl bg-zinc-900/60 animate-pulse border border-zinc-800" />
             ))}
@@ -305,7 +344,7 @@ export default function ContractorPortalPage() {
             <p className="text-xs text-zinc-500 mt-1">Try switching filters or reporting a new civic hazard.</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
             {filteredTickets.map((ticket) => {
               const sla = getSlaTimeRemaining(ticket.slaDeadline);
               const isResolved = ticket.status === "VERIFIED_RESOLVED";
@@ -324,7 +363,7 @@ export default function ContractorPortalPage() {
                       className="w-full h-full object-cover"
                     />
                     <div className="absolute top-2.5 left-2.5 flex items-center gap-1.5">
-                      <span className="px-2 py-0.5 rounded-md bg-zinc-950/80 backdrop-blur text-[11px] font-mono text-zinc-300 border border-zinc-700">
+                      <span className="px-2 py-0.5 rounded-md bg-zinc-950/80 backdrop-blur text-[11px] font-mono tracking-tight tabular-nums text-zinc-300 border border-zinc-700">
                         {ticket.id}
                       </span>
                       <span className="px-2 py-0.5 rounded-md bg-zinc-950/80 backdrop-blur text-[10px] font-semibold text-emerald-400 border border-emerald-500/30">
@@ -351,7 +390,7 @@ export default function ContractorPortalPage() {
                         {ticket.category.replace(/_/g, " ")}
                       </span>
                       <span
-                        className={`flex items-center gap-1 font-mono ${
+                        className={`flex items-center gap-1 font-mono tracking-tight tabular-nums ${
                           sla.isBreached ? "text-red-400 font-bold" : "text-zinc-400"
                         }`}
                       >
@@ -395,7 +434,7 @@ export default function ContractorPortalPage() {
                             <CheckCircle className="h-3.5 w-3.5" />
                             Verified by Gemini 1.5 Pro
                           </span>
-                          <span className="font-mono text-[11px]">
+                          <span className="font-mono tracking-tight tabular-nums text-[11px]">
                             {ticket.latestAudit?.confidenceScore}% Conf.
                           </span>
                         </div>
@@ -419,12 +458,12 @@ export default function ContractorPortalPage() {
 
       {/* RESOLUTION PROOF MODAL */}
       {activeTicket && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-950/80 backdrop-blur-sm overflow-y-auto">
-          <div className="relative w-full max-w-2xl rounded-2xl border border-zinc-800 bg-zinc-900 p-6 space-y-6 my-8 max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-zinc-950/80 backdrop-blur-sm overflow-y-auto">
+          <div className="relative w-full max-w-2xl rounded-2xl border border-zinc-800 bg-zinc-900 p-4 sm:p-6 space-y-5 sm:space-y-6 my-4 sm:my-8 max-h-[92vh] overflow-y-auto">
             {/* Modal Header */}
             <div className="flex items-center justify-between border-b border-zinc-800 pb-4">
               <div>
-                <span className="text-xs font-mono text-emerald-400 font-semibold">
+                <span className="text-xs font-mono tracking-tight tabular-nums text-emerald-400 font-semibold">
                   {activeTicket.id}
                 </span>
                 <h2 className="text-lg font-bold text-white">
@@ -437,6 +476,32 @@ export default function ContractorPortalPage() {
               >
                 <X className="h-5 w-5" />
               </button>
+            </div>
+
+            {/* Quick Demo Preset Bar */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 p-3 rounded-xl bg-blue-950/30 border border-blue-500/20">
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-blue-300">
+                <Zap className="h-4 w-4 text-amber-400 fill-amber-400" />
+                <span>One-Click Hackathon Presets:</span>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => loadDemoPreset("genuine")}
+                  className="px-2.5 py-1.5 rounded-lg bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/30 text-xs font-semibold transition-colors flex items-center gap-1.5"
+                >
+                  <CheckCircle className="h-3.5 w-3.5 text-emerald-400" />
+                  ⚡ Load Genuine Fix (Hot-Mix Asphalt)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => loadDemoPreset("fraud")}
+                  className="px-2.5 py-1.5 rounded-lg bg-red-500/20 border border-red-500/30 text-red-300 hover:bg-red-500/30 text-xs font-semibold transition-colors flex items-center gap-1.5"
+                >
+                  <AlertTriangle className="h-3.5 w-3.5 text-red-400" />
+                  ⚡ Load Fraud Attempt (Superficial Dirt)
+                </button>
+              </div>
             </div>
 
             {/* Side-by-side or stacked reference */}
@@ -537,9 +602,15 @@ export default function ContractorPortalPage() {
                       <AlertTriangle className="h-4 w-4 text-red-400" />
                     )}
                     <span>
-                      {distanceMeters <= 50
-                        ? `Within 50m Geofence (${distanceMeters}m from site)`
-                        : `Geofence Breach: ${distanceMeters}m away (> 50m)`}
+                      {distanceMeters <= 50 ? (
+                        <>
+                          Within 50m Geofence (<span className="font-mono tracking-tight tabular-nums">{distanceMeters}m</span> from site)
+                        </>
+                      ) : (
+                        <>
+                          Geofence Breach: <span className="font-mono tracking-tight tabular-nums">{distanceMeters}m</span> away (&gt; 50m)
+                        </>
+                      )}
                     </span>
                   </div>
                   {gpsSimulated && (
@@ -598,7 +669,7 @@ export default function ContractorPortalPage() {
                   <div className="text-right">
                     <span className="text-[10px] text-zinc-400 block">AI Confidence</span>
                     <span
-                      className={`text-xl font-mono font-bold ${
+                      className={`text-xl font-mono tracking-tight tabular-nums font-bold ${
                         auditResult.confidenceScore >= 70 ? "text-emerald-400" : "text-red-400"
                       }`}
                     >
@@ -648,11 +719,11 @@ export default function ContractorPortalPage() {
             )}
 
             {/* Actions */}
-            <div className="flex items-center justify-end gap-3 pt-2">
+            <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2.5 pt-2">
               <button
                 type="button"
                 onClick={closeModal}
-                className="rounded-xl border border-zinc-700 bg-zinc-800 px-4 py-2.5 text-xs sm:text-sm font-semibold text-zinc-300 hover:bg-zinc-700 transition-colors"
+                className="rounded-xl border border-zinc-700 bg-zinc-800 px-4 py-3 text-xs sm:text-sm font-semibold text-zinc-300 hover:bg-zinc-700 transition-colors min-h-[44px]"
               >
                 Close
               </button>
@@ -666,12 +737,12 @@ export default function ContractorPortalPage() {
                   distanceMeters === null ||
                   distanceMeters > 50
                 }
-                className="rounded-xl bg-emerald-500 px-5 py-2.5 text-xs sm:text-sm font-bold text-zinc-950 hover:bg-emerald-400 transition-colors disabled:opacity-50 flex items-center gap-2"
+                className="rounded-xl bg-emerald-500 px-5 py-3 text-xs sm:text-sm font-bold text-zinc-950 hover:bg-emerald-400 transition-colors disabled:opacity-50 flex items-center justify-center gap-2 min-h-[44px]"
               >
                 {isAuditing ? (
                   <>
                     <RefreshCw className="h-4 w-4 animate-spin" />
-                    <span>Gemini 1.5 Pro Auditing...</span>
+                    <span>Gemini 2.5 Auditing...</span>
                   </>
                 ) : (
                   <>

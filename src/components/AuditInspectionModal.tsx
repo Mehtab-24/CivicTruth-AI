@@ -38,7 +38,7 @@ export function AuditInspectionModal({ ticket, onClose }: AuditInspectionModalPr
         <div className="flex items-start justify-between border-b border-zinc-800 pb-4">
           <div>
             <div className="flex items-center gap-2">
-              <span className="font-mono text-xs font-bold text-emerald-400">
+              <span className="font-mono tracking-tight tabular-nums text-xs font-bold text-emerald-400">
                 {ticket.id}
               </span>
               <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-zinc-800 text-zinc-300 border border-zinc-700">
@@ -66,7 +66,7 @@ export function AuditInspectionModal({ ticket, onClose }: AuditInspectionModalPr
                 <span className="h-2 w-2 rounded-full bg-red-400" />
                 Original Citizen Hazard (Before)
               </span>
-              <span className="text-[11px] font-mono text-zinc-500">
+              <span className="text-[11px] font-mono tracking-tight tabular-nums text-zinc-500">
                 {new Date(ticket.createdAt).toLocaleDateString()}
               </span>
             </div>
@@ -89,7 +89,7 @@ export function AuditInspectionModal({ ticket, onClose }: AuditInspectionModalPr
                 <span className="h-2 w-2 rounded-full bg-emerald-400" />
                 Contractor Resolution Proof (After)
               </span>
-              <span className="text-[11px] font-mono text-zinc-500">
+              <span className="text-[11px] font-mono tracking-tight tabular-nums text-zinc-500">
                 {ticket.updatedAt ? new Date(ticket.updatedAt).toLocaleDateString() : "Pending"}
               </span>
             </div>
@@ -110,7 +110,7 @@ export function AuditInspectionModal({ ticket, onClose }: AuditInspectionModalPr
             <div className="flex items-center justify-between text-[11px] text-zinc-400">
               <span>Agency: {ticket.contractorName || "Unassigned"}</span>
               {contractorGps && (
-                <span className="font-mono text-emerald-400 flex items-center gap-1">
+                <span className="font-mono tracking-tight tabular-nums text-emerald-400 flex items-center gap-1">
                   <MapPin className="h-3 w-3" />
                   GPS Logged
                 </span>
@@ -177,7 +177,7 @@ export function AuditInspectionModal({ ticket, onClose }: AuditInspectionModalPr
                 <div className="text-right">
                   <span className="text-[10px] text-zinc-400 block font-medium">Algorithmic Confidence</span>
                   <span
-                    className={`font-mono text-xl font-bold ${
+                    className={`font-mono tracking-tight tabular-nums text-xl font-bold ${
                       audit.confidenceScore >= 70
                         ? "text-emerald-400"
                         : audit.confidenceScore >= 50

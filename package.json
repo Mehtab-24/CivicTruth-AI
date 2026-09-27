@@ -8,6 +8,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "seed": "tsx scripts/seed.ts",
+    "test:gemini": "tsx scripts/test-live-gemini.ts",
     "test:audit": "tsx scripts/test-audit.ts",
     "test:phase2": "tsx scripts/test-phase2.ts",
     "test:phase3": "tsx scripts/test-phase3.ts"
@@ -44,6 +46,8 @@
     "@types/react": "^18.3.31",
     "@types/react-dom": "^18.3.7",
     "autoprefixer": "^10.6.1",
+    "eslint": "^8.57.1",
+    "eslint-config-next": "^14.2.35",
     "postcss": "^8.5.28",
     "tailwindcss": "^4.3.3",
     "tsx": "^4.23.15",

@@ -252,7 +252,7 @@ export default function CitizenReportPage() {
               </div>
               <div>
                 <h2 className="text-lg sm:text-xl font-bold text-white">Grievance Registered</h2>
-                <p className="text-xs text-emerald-400 font-mono">Reference: {createdTicket.id}</p>
+                <p className="text-xs text-emerald-400 font-mono tracking-tight tabular-nums">Reference: {createdTicket.id}</p>
               </div>
             </div>
 
@@ -329,34 +329,34 @@ export default function CitizenReportPage() {
                 {isRecording && (
                   <span className="flex items-center gap-1.5 text-xs font-semibold text-red-400 animate-pulse">
                     <span className="h-2 w-2 rounded-full bg-red-500" />
-                    Recording: {recordingSeconds}s
+                    Recording: <span className="font-mono tracking-tight tabular-nums">{recordingSeconds}s</span>
                   </span>
                 )}
               </div>
 
               {!audioBlob && !isRecording && (
-                <div className="rounded-xl border border-dashed border-zinc-700 bg-zinc-900/40 p-6 text-center">
+                <div className="rounded-xl border border-dashed border-zinc-700 bg-zinc-900/40 p-5 sm:p-6 text-center">
                   <button
                     type="button"
                     onClick={startRecording}
-                    className="inline-flex items-center gap-2.5 rounded-xl bg-emerald-500 px-5 py-3 text-sm font-semibold text-zinc-950 hover:bg-emerald-400 transition-transform active:scale-95"
+                    className="inline-flex items-center justify-center gap-2.5 rounded-xl bg-emerald-500 px-6 py-3.5 text-sm font-bold text-zinc-950 hover:bg-emerald-400 transition-transform active:scale-95 min-h-[48px] w-full sm:w-auto shadow-md"
                   >
                     <Mic className="h-5 w-5" />
                     Record Grievance
                   </button>
-                  <p className="mt-2 text-xs text-zinc-400">
+                  <p className="mt-2.5 text-xs text-zinc-400 max-w-sm mx-auto">
                     Speak clearly in Hindi, Tamil, Telugu, Kannada, or English describing the location and hazard.
                   </p>
                 </div>
               )}
 
               {isRecording && (
-                <div className="rounded-xl border border-red-500/40 bg-red-950/20 p-6 text-center space-y-4">
-                  <div className="flex justify-center items-center gap-1.5 h-8">
+                <div className="rounded-xl border border-red-500/40 bg-red-950/20 p-5 sm:p-6 text-center space-y-4">
+                  <div className="flex justify-center items-center gap-1.5 sm:gap-2 h-10 overflow-hidden">
                     {[1, 2, 3, 4, 5, 6, 7, 8].map((bar) => (
                       <div
                         key={bar}
-                        className="w-1.5 bg-red-500 rounded-full animate-bounce"
+                        className="w-1.5 sm:w-2 bg-red-500 rounded-full animate-bounce"
                         style={{
                           height: `${Math.max(16, (bar * 7) % 32)}px`,
                           animationDelay: `${bar * 80}ms`,
@@ -367,7 +367,7 @@ export default function CitizenReportPage() {
                   <button
                     type="button"
                     onClick={stopRecording}
-                    className="inline-flex items-center gap-2 rounded-xl bg-red-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-red-500 transition-colors"
+                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-red-600 px-6 py-3 text-sm font-bold text-white hover:bg-red-500 transition-colors min-h-[48px] w-full sm:w-auto shadow-md"
                   >
                     <Square className="h-4 w-4 fill-current" />
                     Stop Recording
@@ -380,7 +380,7 @@ export default function CitizenReportPage() {
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-semibold text-emerald-400 flex items-center gap-1.5">
                       <Volume2 className="h-4 w-4" />
-                      Voice Grievance Captured ({recordingSeconds}s)
+                      Voice Grievance Captured (<span className="font-mono tracking-tight tabular-nums">{recordingSeconds}s</span>)
                     </span>
                     <button
                       type="button"
@@ -419,11 +419,11 @@ export default function CitizenReportPage() {
               </label>
 
               {!imagePreview ? (
-                <label className="flex flex-col items-center justify-center rounded-xl border border-dashed border-zinc-700 bg-zinc-900/40 p-6 text-center cursor-pointer hover:border-emerald-500/50 transition-colors">
+                <label className="flex flex-col items-center justify-center rounded-xl border border-dashed border-zinc-700 bg-zinc-900/40 p-5 sm:p-6 text-center cursor-pointer hover:border-emerald-500/50 transition-colors min-h-[140px]">
                   <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-zinc-800 text-zinc-400 mb-2">
-                    <Camera className="h-6 w-6" />
+                    <Camera className="h-6 w-6 text-emerald-400" />
                   </div>
-                  <span className="text-sm font-medium text-zinc-200">Tap to capture or upload photo</span>
+                  <span className="text-sm font-semibold text-zinc-200">Tap to capture or upload photo</span>
                   <span className="text-xs text-zinc-500 mt-1">Live camera preferred (capture=&quot;environment&quot;)</span>
                   <input
                     type="file"
@@ -438,12 +438,14 @@ export default function CitizenReportPage() {
                   <img
                     src={imagePreview}
                     alt="Hazard site preview"
-                    className="w-full h-48 object-cover"
+                    className="w-full h-44 sm:h-52 object-cover"
                   />
                   <button
                     type="button"
                     onClick={removeImage}
-                    className="absolute top-2 right-2 rounded-lg bg-zinc-900/80 p-2 text-zinc-300 hover:text-red-400 transition-colors"
+                    className="absolute top-2 right-2 rounded-xl bg-zinc-900/90 p-2.5 text-zinc-300 hover:text-red-400 transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center shadow-md"
+                    title="Remove photo"
+                    aria-label="Remove photo"
                   >
                     <Trash2 className="h-4 w-4" />
                   </button>
@@ -472,7 +474,7 @@ export default function CitizenReportPage() {
               <div className="grid grid-cols-2 gap-3 text-xs">
                 <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
                   <span className="text-zinc-500 block text-[11px]">GPS Coordinates</span>
-                  <span className="font-mono text-zinc-200">
+                  <span className="font-mono tracking-tight tabular-nums text-zinc-200">
                     {latitude && longitude
                       ? `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`
                       : "Locating..."}
@@ -480,7 +482,7 @@ export default function CitizenReportPage() {
                 </div>
                 <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
                   <span className="text-zinc-500 block text-[11px]">Accuracy Radius</span>
-                  <span className="font-mono text-emerald-400">
+                  <span className="font-mono tracking-tight tabular-nums text-emerald-400">
                     {gpsAccuracy ? `±${gpsAccuracy} meters` : "Pending"}
                   </span>
                 </div>
@@ -526,12 +528,12 @@ export default function CitizenReportPage() {
             <button
               type="submit"
               disabled={isSubmitting || isRecording}
-              className="w-full rounded-xl bg-emerald-500 px-6 py-4 text-sm sm:text-base font-bold text-zinc-950 hover:bg-emerald-400 transition-colors disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/10"
+              className="w-full rounded-xl bg-emerald-500 px-6 py-4 text-sm sm:text-base font-bold text-zinc-950 hover:bg-emerald-400 transition-all disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/10 min-h-[52px] active:scale-98"
             >
               {isSubmitting ? (
                 <>
                   <RefreshCw className="h-5 w-5 animate-spin" />
-                  <span>Processing Grievance with Gemini 1.5 Flash...</span>
+                  <span>Processing Grievance with Gemini 2.5 Flash...</span>
                 </>
               ) : (
                 <>
