@@ -1,0 +1,36 @@
+# ==========================================
+# SECRETS & ENVIRONMENT CONFIGURATION
+# ==========================================
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.local
+*.env
+
+# Firebase & Google Cloud Service Account Keys
+*-firebase-adminsdk-*.json
+*serviceAccount*.json
+*credentials*.json
+*.pem
+*.key
+
+# Firebase Emulator & Debug Logs
+firebase-debug.log*
+firestore-debug.log*
+ui-debug.log*
+
+# ==========================================
+# STANDARD BUILDS & DEPENDENCIES
+# ==========================================
+node_modules/
+.next/
+out/
+build/
+dist/
+.DS_Store
+Thumbs.db
+# TypeScript incremental build cache
+*.tsbuildinfo
+tsconfig.tsbuildinfo

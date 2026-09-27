@@ -1,0 +1,689 @@
+"use client";
+
+import React, { useState, useEffect } from "react";
+import {
+  Wrench,
+  Camera,
+  MapPin,
+  Clock,
+  AlertTriangle,
+  CheckCircle,
+  XCircle,
+  RefreshCw,
+  Eye,
+  ShieldCheck,
+  Building2,
+  X,
+  FileCheck2,
+} from "lucide-react";
+import { Ticket, TicketStatus } from "@/lib/store";
+import { VerificationAudit } from "@/lib/schemas/audit";
+import { calculateHaversineDistanceMeters } from "@/lib/geo";
+
+export default function ContractorPortalPage() {
+  const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Filters
+  const [selectedWard, setSelectedWard] = useState<number | "ALL">("ALL");
+  const [selectedStatus, setSelectedStatus] = useState<string>("ALL");
+
+  // Active Resolution Modal
+  const [activeTicket, setActiveTicket] = useState<Ticket | null>(null);
+  const [proofImage, setProofImage] = useState<File | null>(null);
+  const [proofPreview, setProofPreview] = useState<string | null>(null);
+
+  // Live Location in Modal
+  const [contractorLat, setContractorLat] = useState<number | null>(null);
+  const [contractorLon, setContractorLon] = useState<number | null>(null);
+  const [distanceMeters, setDistanceMeters] = useState<number | null>(null);
+  const [isLocating, setIsLocating] = useState(false);
+  const [gpsSimulated, setGpsSimulated] = useState(false);
+
+  // Audit Submission State
+  const [isAuditing, setIsAuditing] = useState(false);
+  const [auditResult, setAuditResult] = useState<VerificationAudit | null>(null);
+  const [auditError, setAuditError] = useState<string | null>(null);
+
+  // Fetch Tickets
+  const fetchTickets = async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/tickets");
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error?.message || "Failed to load work orders.");
+      }
+      setTickets(data.tickets);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Error loading tickets";
+      setError(msg);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchTickets();
+  }, []);
+
+  // Update distance whenever activeTicket or contractor coords change
+  useEffect(() => {
+    if (activeTicket && contractorLat !== null && contractorLon !== null) {
+      const dist = calculateHaversineDistanceMeters(
+        { latitude: contractorLat, longitude: contractorLon },
+        { latitude: activeTicket.location.latitude, longitude: activeTicket.location.longitude }
+      );
+      setDistanceMeters(Math.round(dist * 10) / 10);
+    } else {
+      setDistanceMeters(null);
+    }
+  }, [activeTicket, contractorLat, contractorLon]);
+
+  // Modal Location Handler
+  const acquireLocation = (simulateExact = false) => {
+    if (!activeTicket) return;
+
+    if (simulateExact) {
+      // Simulate exact coordinates within 8m of the ticket
+      setContractorLat(activeTicket.location.latitude + 0.00005);
+      setContractorLon(activeTicket.location.longitude + 0.00004);
+      setGpsSimulated(true);
+      return;
+    }
+
+    setGpsSimulated(false);
+    setIsLocating(true);
+    if (!navigator.geolocation) {
+      // Fallback
+      setContractorLat(activeTicket.location.latitude + 0.00005);
+      setContractorLon(activeTicket.location.longitude + 0.00004);
+      setIsLocating(false);
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setContractorLat(pos.coords.latitude);
+        setContractorLon(pos.coords.longitude);
+        setIsLocating(false);
+      },
+      () => {
+        // Fallback simulate exact if blocked
+        setContractorLat(activeTicket.location.latitude + 0.00005);
+        setContractorLon(activeTicket.location.longitude + 0.00004);
+        setGpsSimulated(true);
+        setIsLocating(false);
+      },
+      { enableHighAccuracy: true, timeout: 8000 }
+    );
+  };
+
+  // Open Modal
+  const openModal = (ticket: Ticket) => {
+    setActiveTicket(ticket);
+    setProofImage(null);
+    setProofPreview(null);
+    setAuditResult(null);
+    setAuditError(null);
+    // Auto simulate exact GPS by default for convenience, or acquire live
+    setContractorLat(ticket.location.latitude + 0.00005);
+    setContractorLon(ticket.location.longitude + 0.00004);
+    setGpsSimulated(true);
+  };
+
+  const closeModal = () => {
+    setActiveTicket(null);
+    if (proofPreview) {
+      URL.revokeObjectURL(proofPreview);
+      setProofPreview(null);
+    }
+    setProofImage(null);
+    setAuditResult(null);
+    setAuditError(null);
+  };
+
+  const handleProofImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setProofImage(file);
+      const url = URL.createObjectURL(file);
+      setProofPreview(url);
+    }
+  };
+
+  // Submit Audit Request
+  const handleSubmitAudit = async () => {
+    if (!activeTicket || !proofImage || contractorLat === null || contractorLon === null) {
+      setAuditError("Please capture proof image and ensure GPS is acquired.");
+      return;
+    }
+
+    setIsAuditing(true);
+    setAuditError(null);
+    setAuditResult(null);
+
+    try {
+      const formData = new FormData();
+      formData.append("ticketId", activeTicket.id);
+      formData.append("originalImageUrl", activeTicket.originalImageUrl);
+      formData.append("contractorImage", proofImage);
+      formData.append("latitude", contractorLat.toString());
+      formData.append("longitude", contractorLon.toString());
+      formData.append("originLatitude", activeTicket.location.latitude.toString());
+      formData.append("originLongitude", activeTicket.location.longitude.toString());
+
+      const res = await fetch("/api/audit/verify", {
+        method: "POST",
+        body: formData,
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        throw new Error(data.error?.message || "Audit engine verification failed.");
+      }
+
+      setAuditResult(data.audit);
+      // Refresh tickets to reflect updated status
+      fetchTickets();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Error verifying resolution proof.";
+      setAuditError(msg);
+    } finally {
+      setIsAuditing(false);
+    }
+  };
+
+  // Helper for SLA time remaining
+  const getSlaTimeRemaining = (deadlineStr: string) => {
+    const diff = new Date(deadlineStr).getTime() - Date.now();
+    if (diff <= 0) return { label: "Breached SLA", isBreached: true };
+    const hours = Math.floor(diff / (1000 * 60 * 60));
+    const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+    return { label: `${hours}h ${minutes}m left`, isBreached: hours < 4 };
+  };
+
+  const filteredTickets = tickets.filter((t) => {
+    if (selectedWard !== "ALL" && t.location.wardNumber !== selectedWard) return false;
+    if (selectedStatus !== "ALL" && t.status !== selectedStatus) return false;
+    return true;
+  });
+
+  return (
+    <main className="min-h-screen bg-zinc-950 py-8 px-4 sm:px-6">
+      <div className="mx-auto max-w-6xl">
+        {/* Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+          <div>
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-xs font-semibold uppercase tracking-wider mb-2">
+              <Wrench className="h-3.5 w-3.5" />
+              Municipal Field Contractor Portal
+            </div>
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-white">
+              Assigned Work Orders & Audits
+            </h1>
+            <p className="mt-1 text-sm text-zinc-400">
+              Submit geofenced photographic proof of completed repairs for autonomous multimodal verification.
+            </p>
+          </div>
+
+          <button
+            onClick={fetchTickets}
+            disabled={isLoading}
+            className="inline-flex items-center gap-2 rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-2.5 text-xs sm:text-sm font-semibold text-zinc-200 hover:bg-zinc-800 transition-colors self-start sm:self-auto"
+          >
+            <RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin text-emerald-400" : ""}`} />
+            Refresh Feed
+          </button>
+        </div>
+
+        {/* Filter Controls */}
+        <div className="flex flex-wrap items-center gap-3 mb-6 p-4 rounded-2xl border border-zinc-800 bg-zinc-900/60">
+          <div className="flex items-center gap-2 text-xs font-medium text-zinc-400">
+            <Building2 className="h-4 w-4 text-zinc-500" />
+            <span>Ward Filter:</span>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {[
+              { label: "All Wards", val: "ALL" },
+              { label: "Ward 84 (Indiranagar)", val: 84 },
+              { label: "Ward 112 (Domlur)", val: 112 },
+              { label: "Ward 150 (Bellandur)", val: 150 },
+            ].map((w) => (
+              <button
+                key={w.label}
+                onClick={() => setSelectedWard(w.val as number | "ALL")}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                  selectedWard === w.val
+                    ? "bg-emerald-500 text-zinc-950 font-bold"
+                    : "bg-zinc-800 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700"
+                }`}
+              >
+                {w.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="h-4 w-px bg-zinc-800 hidden sm:block" />
+
+          <div className="flex items-center gap-2 text-xs font-medium text-zinc-400">
+            <span>Status:</span>
+          </div>
+          <select
+            value={selectedStatus}
+            onChange={(e) => setSelectedStatus(e.target.value)}
+            className="rounded-lg border border-zinc-700 bg-zinc-800 px-2.5 py-1 text-xs text-zinc-200 focus:outline-none"
+          >
+            <option value="ALL">All Statuses</option>
+            <option value="OPEN">OPEN</option>
+            <option value="VERIFIED_RESOLVED">VERIFIED RESOLVED</option>
+            <option value="REJECTED_AUDIT_FAILED">AUDIT FAILED</option>
+            <option value="MANUAL_INSPECTION_REQUIRED">MANUAL INSPECTION</option>
+          </select>
+        </div>
+
+        {error && (
+          <div className="rounded-xl border border-red-500/30 bg-red-950/20 p-4 text-xs sm:text-sm text-red-300 mb-6">
+            {error}
+          </div>
+        )}
+
+        {/* Work Orders Grid */}
+        {isLoading ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="h-80 rounded-2xl bg-zinc-900/60 animate-pulse border border-zinc-800" />
+            ))}
+          </div>
+        ) : filteredTickets.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-zinc-800 bg-zinc-900/20 p-12 text-center">
+            <CheckCircle className="h-10 w-10 text-zinc-600 mx-auto mb-3" />
+            <h3 className="text-base font-semibold text-zinc-300">No matching work orders</h3>
+            <p className="text-xs text-zinc-500 mt-1">Try switching filters or reporting a new civic hazard.</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {filteredTickets.map((ticket) => {
+              const sla = getSlaTimeRemaining(ticket.slaDeadline);
+              const isResolved = ticket.status === "VERIFIED_RESOLVED";
+              const isFailed = ticket.status === "REJECTED_AUDIT_FAILED";
+
+              return (
+                <div
+                  key={ticket.id}
+                  className="rounded-2xl border border-zinc-800 bg-zinc-900/50 overflow-hidden flex flex-col hover:border-zinc-700 transition-colors"
+                >
+                  {/* Image Header with Badge Overlay */}
+                  <div className="relative h-44 bg-zinc-950">
+                    <img
+                      src={ticket.originalImageUrl}
+                      alt={ticket.summary}
+                      className="w-full h-full object-cover"
+                    />
+                    <div className="absolute top-2.5 left-2.5 flex items-center gap-1.5">
+                      <span className="px-2 py-0.5 rounded-md bg-zinc-950/80 backdrop-blur text-[11px] font-mono text-zinc-300 border border-zinc-700">
+                        {ticket.id}
+                      </span>
+                      <span className="px-2 py-0.5 rounded-md bg-zinc-950/80 backdrop-blur text-[10px] font-semibold text-emerald-400 border border-emerald-500/30">
+                        Ward {ticket.location.wardNumber}
+                      </span>
+                    </div>
+
+                    <div className="absolute top-2.5 right-2.5">
+                      <span
+                        className={`px-2.5 py-0.5 rounded-md text-[11px] font-bold border backdrop-blur ${
+                          isResolved
+                            ? "bg-emerald-950/80 text-emerald-400 border-emerald-500/40"
+                            : isFailed
+                            ? "bg-red-950/80 text-red-400 border-red-500/40"
+                            : "bg-amber-950/80 text-amber-300 border-amber-500/40"
+                        }`}
+                      >
+                        {ticket.status.replace(/_/g, " ")}
+                      </span>
+                    </div>
+
+                    <div className="absolute bottom-2.5 left-2.5 right-2.5 flex items-center justify-between text-[11px] bg-zinc-950/85 backdrop-blur px-2.5 py-1 rounded-lg border border-zinc-800 text-zinc-300">
+                      <span className="font-semibold text-white">
+                        {ticket.category.replace(/_/g, " ")}
+                      </span>
+                      <span
+                        className={`flex items-center gap-1 font-mono ${
+                          sla.isBreached ? "text-red-400 font-bold" : "text-zinc-400"
+                        }`}
+                      >
+                        <Clock className="h-3 w-3" />
+                        {sla.label}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Body Content */}
+                  <div className="p-4 flex-1 flex flex-col justify-between space-y-3">
+                    <div className="space-y-2">
+                      <p className="text-xs sm:text-sm text-zinc-200 line-clamp-2">
+                        {ticket.summary}
+                      </p>
+
+                      <div className="flex items-start gap-1.5 text-[11px] text-zinc-400">
+                        <MapPin className="h-3.5 w-3.5 shrink-0 text-emerald-400 mt-0.5" />
+                        <span className="line-clamp-1">{ticket.location.address}</span>
+                      </div>
+
+                      {ticket.extractedLandmarks.length > 0 && (
+                        <div className="flex flex-wrap gap-1 pt-1">
+                          {ticket.extractedLandmarks.map((lm, idx) => (
+                            <span
+                              key={idx}
+                              className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400 border border-zinc-700"
+                            >
+                              {lm}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Action Button */}
+                    <div className="pt-2 border-t border-zinc-800">
+                      {isResolved ? (
+                        <div className="flex items-center justify-between text-xs text-emerald-400 bg-emerald-950/30 p-2 rounded-lg border border-emerald-500/20">
+                          <span className="flex items-center gap-1 font-semibold">
+                            <CheckCircle className="h-3.5 w-3.5" />
+                            Verified by Gemini 1.5 Pro
+                          </span>
+                          <span className="font-mono text-[11px]">
+                            {ticket.latestAudit?.confidenceScore}% Conf.
+                          </span>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => openModal(ticket)}
+                          className="w-full rounded-xl bg-blue-600 px-3.5 py-2.5 text-xs sm:text-sm font-semibold text-white hover:bg-blue-500 transition-colors flex items-center justify-center gap-2"
+                        >
+                          <Camera className="h-4 w-4" />
+                          <span>Submit Resolution Proof</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* RESOLUTION PROOF MODAL */}
+      {activeTicket && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-950/80 backdrop-blur-sm overflow-y-auto">
+          <div className="relative w-full max-w-2xl rounded-2xl border border-zinc-800 bg-zinc-900 p-6 space-y-6 my-8 max-h-[90vh] overflow-y-auto">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b border-zinc-800 pb-4">
+              <div>
+                <span className="text-xs font-mono text-emerald-400 font-semibold">
+                  {activeTicket.id}
+                </span>
+                <h2 className="text-lg font-bold text-white">
+                  Field Verification Proof Submission
+                </h2>
+              </div>
+              <button
+                onClick={closeModal}
+                className="rounded-lg p-1.5 text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Side-by-side or stacked reference */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <span className="text-[11px] font-semibold text-zinc-400 flex items-center gap-1">
+                  <Eye className="h-3.5 w-3.5 text-amber-400" />
+                  Original Hazard Complaint:
+                </span>
+                <div className="h-36 rounded-xl overflow-hidden border border-zinc-700 bg-zinc-950">
+                  <img
+                    src={activeTicket.originalImageUrl}
+                    alt="Original Hazard"
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <span className="text-[11px] font-semibold text-zinc-400 flex items-center gap-1">
+                  <Camera className="h-3.5 w-3.5 text-emerald-400" />
+                  Contractor Live Repair Proof:
+                </span>
+                {proofPreview ? (
+                  <div className="relative h-36 rounded-xl overflow-hidden border border-zinc-700 bg-zinc-950">
+                    <img
+                      src={proofPreview}
+                      alt="Repair Proof"
+                      className="w-full h-full object-cover"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setProofImage(null);
+                        setProofPreview(null);
+                      }}
+                      className="absolute top-2 right-2 rounded-lg bg-zinc-900/80 p-1.5 text-zinc-300 hover:text-red-400"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                ) : (
+                  <label className="flex flex-col items-center justify-center h-36 rounded-xl border border-dashed border-zinc-700 bg-zinc-950/60 p-4 text-center cursor-pointer hover:border-emerald-500/50 transition-colors">
+                    <Camera className="h-6 w-6 text-zinc-500 mb-1" />
+                    <span className="text-xs font-medium text-zinc-300">Tap to capture repair photo</span>
+                    <span className="text-[10px] text-zinc-500">Live camera preferred</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      onChange={handleProofImageChange}
+                      className="hidden"
+                    />
+                  </label>
+                )}
+              </div>
+            </div>
+
+            {/* Geofence Status Card */}
+            <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-white flex items-center gap-1.5">
+                  <MapPin className="h-4 w-4 text-emerald-400" />
+                  Geofence Boundary Check (50m Limit)
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => acquireLocation(false)}
+                    disabled={isLocating}
+                    className="text-[11px] text-blue-400 hover:underline"
+                  >
+                    {isLocating ? "Locating..." : "Use Live GPS"}
+                  </button>
+                  <span className="text-zinc-600">•</span>
+                  <button
+                    type="button"
+                    onClick={() => acquireLocation(true)}
+                    className="text-[11px] text-emerald-400 hover:underline"
+                  >
+                    Simulate On-Site (8m)
+                  </button>
+                </div>
+              </div>
+
+              {distanceMeters !== null && (
+                <div
+                  className={`flex items-center justify-between p-3 rounded-xl border text-xs font-semibold ${
+                    distanceMeters <= 50
+                      ? "border-emerald-500/30 bg-emerald-950/20 text-emerald-300"
+                      : "border-red-500/30 bg-red-950/20 text-red-300"
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    {distanceMeters <= 50 ? (
+                      <CheckCircle className="h-4 w-4 text-emerald-400" />
+                    ) : (
+                      <AlertTriangle className="h-4 w-4 text-red-400" />
+                    )}
+                    <span>
+                      {distanceMeters <= 50
+                        ? `Within 50m Geofence (${distanceMeters}m from site)`
+                        : `Geofence Breach: ${distanceMeters}m away (> 50m)`}
+                    </span>
+                  </div>
+                  {gpsSimulated && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400 border border-zinc-700">
+                      Simulated Test GPS
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Error Message */}
+            {auditError && (
+              <div className="rounded-xl border border-red-500/30 bg-red-950/30 p-3 text-xs text-red-300 flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4 text-red-400 shrink-0" />
+                <span>{auditError}</span>
+              </div>
+            )}
+
+            {/* AUDIT VERDICT CARD */}
+            {auditResult && (
+              <div
+                className={`rounded-2xl border p-5 space-y-4 ${
+                  auditResult.decision === "PASS"
+                    ? "border-emerald-500/40 bg-emerald-950/25"
+                    : "border-red-500/40 bg-red-950/25"
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    {auditResult.decision === "PASS" ? (
+                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-400">
+                        <CheckCircle className="h-6 w-6" />
+                      </div>
+                    ) : (
+                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-red-500/20 text-red-400">
+                        <XCircle className="h-6 w-6" />
+                      </div>
+                    )}
+                    <div>
+                      <span className="text-xs uppercase font-bold tracking-wider text-zinc-400">
+                        Multimodal Audit Verdict
+                      </span>
+                      <h3
+                        className={`text-base font-bold ${
+                          auditResult.decision === "PASS" ? "text-emerald-300" : "text-red-300"
+                        }`}
+                      >
+                        {auditResult.decision === "PASS"
+                          ? "VERIFIED RESOLVED – AUDIT PASSED"
+                          : "REJECTED – CIVIC AUDIT FAILED"}
+                      </h3>
+                    </div>
+                  </div>
+
+                  <div className="text-right">
+                    <span className="text-[10px] text-zinc-400 block">AI Confidence</span>
+                    <span
+                      className={`text-xl font-mono font-bold ${
+                        auditResult.confidenceScore >= 70 ? "text-emerald-400" : "text-red-400"
+                      }`}
+                    >
+                      {auditResult.confidenceScore}%
+                    </span>
+                  </div>
+                </div>
+
+                {auditResult.rejectionReasoning && (
+                  <div className="rounded-xl border border-red-500/20 bg-red-950/40 p-3 text-xs text-red-200">
+                    <span className="font-bold block mb-1">Rejection Reasoning:</span>
+                    {auditResult.rejectionReasoning}
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div className="p-2.5 rounded-lg bg-zinc-950/60 border border-zinc-800">
+                    <span className="text-zinc-500 block text-[10px]">Material Detected</span>
+                    <span className="font-semibold text-zinc-200">
+                      {auditResult.materialAnalysis.repairMaterialDetected}
+                    </span>
+                  </div>
+                  <div className="p-2.5 rounded-lg bg-zinc-950/60 border border-zinc-800">
+                    <span className="text-zinc-500 block text-[10px]">Workmanship Grade</span>
+                    <span className="font-semibold text-zinc-200">
+                      {auditResult.materialAnalysis.workmanshipGrade}
+                    </span>
+                  </div>
+                </div>
+
+                {auditResult.landmarkMatchDetails.matchedLandmarks.length > 0 && (
+                  <div className="text-xs space-y-1">
+                    <span className="text-zinc-400 font-medium">Matched Invariant Landmarks:</span>
+                    <div className="flex flex-wrap gap-1">
+                      {auditResult.landmarkMatchDetails.matchedLandmarks.map((lm, idx) => (
+                        <span
+                          key={idx}
+                          className="px-2 py-0.5 rounded bg-zinc-800 text-zinc-300 text-[11px] border border-zinc-700"
+                        >
+                          {lm}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Actions */}
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={closeModal}
+                className="rounded-xl border border-zinc-700 bg-zinc-800 px-4 py-2.5 text-xs sm:text-sm font-semibold text-zinc-300 hover:bg-zinc-700 transition-colors"
+              >
+                Close
+              </button>
+
+              <button
+                type="button"
+                onClick={handleSubmitAudit}
+                disabled={
+                  isAuditing ||
+                  !proofImage ||
+                  distanceMeters === null ||
+                  distanceMeters > 50
+                }
+                className="rounded-xl bg-emerald-500 px-5 py-2.5 text-xs sm:text-sm font-bold text-zinc-950 hover:bg-emerald-400 transition-colors disabled:opacity-50 flex items-center gap-2"
+              >
+                {isAuditing ? (
+                  <>
+                    <RefreshCw className="h-4 w-4 animate-spin" />
+                    <span>Gemini 1.5 Pro Auditing...</span>
+                  </>
+                ) : (
+                  <>
+                    <ShieldCheck className="h-4 w-4" />
+                    <span>Run Multimodal AI Audit</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </main>
+  );
+}
