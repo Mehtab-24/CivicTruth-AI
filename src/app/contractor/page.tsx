@@ -19,6 +19,9 @@ import {
   Zap,
   Loader2,
   Sparkles,
+  Trash2,
+  Droplets,
+  Lightbulb,
 } from "lucide-react";
 import { Ticket, TicketStatus } from "@/lib/store";
 import { VerificationAudit } from "@/lib/schemas/audit";
@@ -52,8 +55,9 @@ export default function ContractorPortalPage() {
   const [selectedWard, setSelectedWard] = useState<number | "ALL">("ALL");
   const [selectedStatus, setSelectedStatus] = useState<string>("ALL");
 
-  // Active Resolution Modal
+  // Active Resolution Modal & Evidence Preview
   const [activeTicket, setActiveTicket] = useState<Ticket | null>(null);
+  const [previewTicket, setPreviewTicket] = useState<Ticket | null>(null);
   const [proofImage, setProofImage] = useState<File | null>(null);
   const [proofPreview, setProofPreview] = useState<string | null>(null);
 
@@ -298,6 +302,76 @@ export default function ContractorPortalPage() {
     return { label: `${hours}h ${minutes}m left`, isBreached: hours < 4 };
   };
 
+  // Helper for Category icons, styles, and labels
+  const getCategoryMeta = (category: string) => {
+    const cat = category.toLowerCase();
+    if (cat.includes("pothole") || cat.includes("road")) {
+      return {
+        icon: AlertTriangle,
+        color: "text-amber-400",
+        bgColor: "bg-amber-500/10",
+        label: category.replace(/_/g, " "),
+      };
+    }
+    if (cat.includes("garbage") || cat.includes("waste") || cat.includes("trash")) {
+      return {
+        icon: Trash2,
+        color: "text-emerald-400",
+        bgColor: "bg-emerald-500/10",
+        label: category.replace(/_/g, " "),
+      };
+    }
+    if (cat.includes("sewage") || cat.includes("water") || cat.includes("drain")) {
+      return {
+        icon: Droplets,
+        color: "text-cyan-400",
+        bgColor: "bg-cyan-500/10",
+        label: category.replace(/_/g, " "),
+      };
+    }
+    if (cat.includes("light") || cat.includes("electric") || cat.includes("lamp")) {
+      return {
+        icon: Lightbulb,
+        color: "text-yellow-400",
+        bgColor: "bg-yellow-500/10",
+        label: category.replace(/_/g, " "),
+      };
+    }
+    return {
+      icon: Wrench,
+      color: "text-blue-400",
+      bgColor: "bg-blue-500/10",
+      label: category.replace(/_/g, " "),
+    };
+  };
+
+  // Helper for Status Badge styling
+  const getStatusBadge = (status: TicketStatus | string) => {
+    switch (status) {
+      case "VERIFIED_RESOLVED":
+        return {
+          label: "VERIFIED RESOLVED",
+          className: "bg-emerald-950/80 text-emerald-400 border border-emerald-500/30",
+        };
+      case "REJECTED_AUDIT_FAILED":
+        return {
+          label: "AUDIT FAILED",
+          className: "bg-red-950/80 text-red-400 border border-red-500/30",
+        };
+      case "MANUAL_INSPECTION_REQUIRED":
+        return {
+          label: "MANUAL INSPECTION",
+          className: "bg-purple-950/80 text-purple-300 border border-purple-500/30",
+        };
+      case "OPEN":
+      default:
+        return {
+          label: status.replace(/_/g, " "),
+          className: "bg-amber-950/80 text-amber-300 border border-amber-500/30",
+        };
+    }
+  };
+
   const filteredTickets = tickets.filter((t) => {
     if (selectedWard !== "ALL" && t.location.wardNumber !== selectedWard) return false;
     if (selectedStatus !== "ALL" && t.status !== selectedStatus) return false;
@@ -387,27 +461,48 @@ export default function ContractorPortalPage() {
 
         {/* Work Orders Grid */}
         {isLoading ? (
-          /* Polished Skeleton Cards */
+          /* Polished High-Density Skeleton Cards */
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
             {[1, 2, 3, 4, 5, 6].map((i) => (
               <div
                 key={i}
-                className="rounded-2xl border border-zinc-800 bg-zinc-900/40 overflow-hidden flex flex-col animate-pulse"
+                className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-4 sm:p-5 flex flex-col justify-between space-y-4 animate-pulse"
               >
-                <div className="h-44 bg-zinc-800/60 relative">
-                  <div className="absolute top-3 left-3 h-5 w-24 rounded bg-zinc-700/60" />
-                  <div className="absolute top-3 right-3 h-5 w-20 rounded bg-zinc-700/60" />
-                  <div className="absolute bottom-3 left-3 right-3 h-7 rounded bg-zinc-900/80" />
+                {/* Top Bar Skeleton */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="h-4 w-20 rounded bg-zinc-800" />
+                    <div className="h-4 w-16 rounded bg-zinc-800" />
+                  </div>
+                  <div className="h-5 w-24 rounded bg-zinc-800" />
                 </div>
-                <div className="p-4 space-y-3 flex-1 flex flex-col justify-between">
-                  <div className="space-y-2">
-                    <div className="h-4 w-3/4 rounded bg-zinc-800/80" />
-                    <div className="h-3 w-full rounded bg-zinc-800/50" />
-                    <div className="h-3 w-2/3 rounded bg-zinc-800/50" />
+
+                {/* Category & Title / SLA Skeleton */}
+                <div className="flex items-center justify-between pt-1 border-t border-zinc-800/60">
+                  <div className="flex items-center gap-2">
+                    <div className="h-7 w-7 rounded-lg bg-zinc-800" />
+                    <div className="h-4 w-28 rounded bg-zinc-800" />
                   </div>
-                  <div className="pt-2 border-t border-zinc-800/80">
-                    <div className="h-9 w-full rounded-xl bg-zinc-800/80" />
+                  <div className="h-4 w-20 rounded bg-zinc-800" />
+                </div>
+
+                {/* Description & Location Skeleton */}
+                <div className="space-y-2 flex-1">
+                  <div className="h-3.5 w-full rounded bg-zinc-800/80" />
+                  <div className="h-3.5 w-4/5 rounded bg-zinc-800/60" />
+                  <div className="h-3 w-3/5 rounded bg-zinc-800/50 pt-1" />
+                  <div className="flex gap-1.5 pt-1">
+                    <div className="h-4 w-16 rounded bg-zinc-800/60" />
+                    <div className="h-4 w-20 rounded bg-zinc-800/60" />
                   </div>
+                </div>
+
+                {/* Evidence Attachment Strip Skeleton */}
+                <div className="h-10 w-full rounded-xl bg-zinc-800/50" />
+
+                {/* Action Button Skeleton */}
+                <div className="pt-2 border-t border-zinc-800">
+                  <div className="h-10 w-full rounded-xl bg-zinc-800" />
                 </div>
               </div>
             ))}
@@ -442,107 +537,115 @@ export default function ContractorPortalPage() {
             {filteredTickets.map((ticket) => {
               const sla = getSlaTimeRemaining(ticket.slaDeadline);
               const isResolved = ticket.status === "VERIFIED_RESOLVED";
-              const isFailed = ticket.status === "REJECTED_AUDIT_FAILED";
+              const catMeta = getCategoryMeta(ticket.category);
+              const CategoryIcon = catMeta.icon;
+              const statusMeta = getStatusBadge(ticket.status);
 
               return (
                 <div
                   key={ticket.id}
-                  className="rounded-2xl border border-zinc-800 bg-zinc-900/50 overflow-hidden flex flex-col hover:border-zinc-700 transition-colors"
+                  className="rounded-2xl border border-zinc-800 bg-zinc-900/50 p-4 sm:p-5 flex flex-col justify-between hover:border-zinc-700 transition-colors space-y-4 shadow-sm"
                 >
-                  {/* Image Header with Badge Overlay */}
-                  <div className="relative h-44 bg-zinc-950">
-                    <img
-                      src={ticket.originalImageUrl}
-                      alt={ticket.summary}
-                      className="w-full h-full object-cover"
-                    />
-                    <div className="absolute top-2.5 left-2.5 flex items-center gap-1.5">
-                      <span className="px-2 py-0.5 rounded-md bg-zinc-950/80 backdrop-blur text-[11px] font-mono tracking-tight tabular-nums text-zinc-300 border border-zinc-700">
+                  {/* Top Bar: Ticket ID, Ward Badge, Status Badge */}
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-xs font-semibold text-slate-400">
                         {ticket.id}
                       </span>
-                      <span className="px-2 py-0.5 rounded-md bg-zinc-950/80 backdrop-blur text-[10px] font-semibold text-emerald-400 border border-emerald-500/30">
+                      <span className="text-xs bg-slate-800 text-slate-300 px-2 py-0.5 rounded font-medium">
                         Ward {ticket.location.wardNumber}
                       </span>
                     </div>
-
-                    <div className="absolute top-2.5 right-2.5">
-                      <span
-                        className={`px-2.5 py-0.5 rounded-md text-[11px] font-bold border backdrop-blur ${
-                          isResolved
-                            ? "bg-emerald-950/80 text-emerald-400 border-emerald-500/40"
-                            : isFailed
-                            ? "bg-red-950/80 text-red-400 border-red-500/40"
-                            : "bg-amber-950/80 text-amber-300 border-amber-500/40"
-                        }`}
-                      >
-                        {ticket.status.replace(/_/g, " ")}
-                      </span>
-                    </div>
-
-                    <div className="absolute bottom-2.5 left-2.5 right-2.5 flex items-center justify-between text-[11px] bg-zinc-950/85 backdrop-blur px-2.5 py-1 rounded-lg border border-zinc-800 text-zinc-300">
-                      <span className="font-semibold text-white">
-                        {ticket.category.replace(/_/g, " ")}
-                      </span>
-                      <span
-                        className={`flex items-center gap-1 font-mono tracking-tight tabular-nums ${
-                          sla.isBreached ? "text-red-400 font-bold" : "text-zinc-400"
-                        }`}
-                      >
-                        <Clock className="h-3 w-3" />
-                        {sla.label}
-                      </span>
-                    </div>
+                    <span
+                      className={`px-2.5 py-0.5 rounded text-xs font-semibold tracking-wide ${statusMeta.className}`}
+                    >
+                      {statusMeta.label}
+                    </span>
                   </div>
 
-                  {/* Body Content */}
-                  <div className="p-4 flex-1 flex flex-col justify-between space-y-3">
-                    <div className="space-y-2">
-                      <p className="text-xs sm:text-sm text-zinc-200 line-clamp-2">
-                        {ticket.summary}
-                      </p>
-
-                      <div className="flex items-start gap-1.5 text-[11px] text-zinc-400">
-                        <MapPin className="h-3.5 w-3.5 shrink-0 text-emerald-400 mt-0.5" />
-                        <span className="line-clamp-1">{ticket.location.address}</span>
+                  {/* Category & Title + SLA */}
+                  <div className="flex items-center justify-between gap-2 pt-1 border-t border-zinc-800/60">
+                    <div className="flex items-center gap-2">
+                      <div className={`p-1.5 rounded-lg ${catMeta.bgColor} ${catMeta.color}`}>
+                        <CategoryIcon className="h-4 w-4" />
                       </div>
+                      <span className="text-sm font-semibold text-white tracking-tight">
+                        {catMeta.label}
+                      </span>
+                    </div>
+                    <span
+                      className={`flex items-center gap-1 font-mono text-xs tracking-tight tabular-nums ${
+                        sla.isBreached ? "text-red-400 font-bold" : "text-amber-400"
+                      }`}
+                    >
+                      <Clock className="h-3 w-3" />
+                      {sla.label}
+                    </span>
+                  </div>
 
-                      {ticket.extractedLandmarks.length > 0 && (
-                        <div className="flex flex-wrap gap-1 pt-1">
-                          {ticket.extractedLandmarks.map((lm, idx) => (
-                            <span
-                              key={idx}
-                              className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400 border border-zinc-700"
-                            >
-                              {lm}
-                            </span>
-                          ))}
-                        </div>
-                      )}
+                  {/* Location & Description */}
+                  <div className="space-y-2 flex-1">
+                    <p className="text-xs sm:text-sm text-slate-300 line-clamp-2 min-h-[2.5rem] leading-snug">
+                      {ticket.summary}
+                    </p>
+
+                    <div className="flex items-start gap-1.5 text-xs text-slate-400">
+                      <MapPin className="h-3.5 w-3.5 shrink-0 text-emerald-400 mt-0.5" />
+                      <span className="line-clamp-1">{ticket.location.address}</span>
                     </div>
 
-                    {/* Action Button */}
-                    <div className="pt-2 border-t border-zinc-800">
-                      {isResolved ? (
-                        <div className="flex items-center justify-between text-xs text-emerald-400 bg-emerald-950/30 p-2 rounded-lg border border-emerald-500/20">
-                          <span className="flex items-center gap-1 font-semibold">
-                            <CheckCircle className="h-3.5 w-3.5" />
-                            Verified by Gemini 1.5 Pro
+                    {ticket.extractedLandmarks.length > 0 && (
+                      <div className="flex flex-wrap gap-1 pt-1">
+                        {ticket.extractedLandmarks.map((lm, idx) => (
+                          <span
+                            key={idx}
+                            className="text-xs px-2 py-0.5 rounded bg-slate-900 border border-slate-800 text-slate-400"
+                          >
+                            {lm}
                           </span>
-                          <span className="font-mono tracking-tight tabular-nums text-[11px]">
-                            {ticket.latestAudit?.confidenceScore}% Conf.
-                          </span>
-                        </div>
-                      ) : (
-                        <button
-                          onClick={() => openModal(ticket)}
-                          disabled={isAuditing}
-                          className="w-full rounded-xl bg-blue-600 px-3.5 py-2.5 text-xs sm:text-sm font-semibold text-white hover:bg-blue-500 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
-                        >
-                          <Camera className="h-4 w-4" />
-                          <span>Submit Resolution Proof</span>
-                        </button>
-                      )}
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Evidence Attachment Strip */}
+                  <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-900/80 border border-slate-800/80 text-xs">
+                    <div className="flex items-center gap-2 text-slate-300">
+                      <Camera className="h-3.5 w-3.5 text-slate-400" />
+                      <span className="font-medium">1 Citizen Evidence Photo</span>
                     </div>
+                    <button
+                      type="button"
+                      onClick={() => setPreviewTicket(ticket)}
+                      className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium transition-colors flex items-center gap-1.5 border border-slate-700/60"
+                    >
+                      <Eye className="h-3 w-3 text-slate-400" />
+                      Preview
+                    </button>
+                  </div>
+
+                  {/* Card Action */}
+                  <div className="pt-2 border-t border-zinc-800">
+                    {isResolved ? (
+                      <div className="flex items-center justify-between text-xs text-emerald-400 bg-emerald-950/30 p-2.5 rounded-xl border border-emerald-500/20">
+                        <span className="flex items-center gap-1.5 font-semibold">
+                          <CheckCircle className="h-4 w-4" />
+                          Verified by Gemini 1.5 Pro
+                        </span>
+                        <span className="font-mono tracking-tight tabular-nums text-xs">
+                          {ticket.latestAudit?.confidenceScore}% Conf.
+                        </span>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => openModal(ticket)}
+                        disabled={isAuditing}
+                        className="w-full rounded-xl bg-blue-600 hover:bg-blue-500 px-3.5 py-2.5 text-xs sm:text-sm font-semibold text-white transition-colors flex items-center justify-center gap-2 shadow-sm disabled:opacity-50"
+                      >
+                        <Camera className="h-4 w-4" />
+                        <span>Submit Resolution Proof</span>
+                      </button>
+                    )}
                   </div>
                 </div>
               );
@@ -550,6 +653,54 @@ export default function ContractorPortalPage() {
           </div>
         )}
       </div>
+
+      {/* CITIZEN EVIDENCE PHOTO PREVIEW MODAL */}
+      {previewTicket && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-zinc-950/80 backdrop-blur-sm">
+          <div className="relative w-full max-w-xl rounded-2xl border border-zinc-800 bg-zinc-900 p-4 sm:p-5 space-y-4 max-h-[90vh] flex flex-col shadow-2xl">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-xs font-semibold text-emerald-400">
+                  {previewTicket.id}
+                </span>
+                <span className="text-xs bg-slate-800 text-slate-300 px-2 py-0.5 rounded font-medium">
+                  Ward {previewTicket.location.wardNumber}
+                </span>
+                <span className="text-xs text-zinc-400 font-medium">
+                  Citizen Evidence Photo
+                </span>
+              </div>
+              <button
+                onClick={() => setPreviewTicket(null)}
+                className="rounded-lg p-1.5 text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Image Display */}
+            <div className="relative flex-1 min-h-0 rounded-xl overflow-hidden border border-zinc-800 bg-zinc-950 flex items-center justify-center p-2">
+              <img
+                src={previewTicket.originalImageUrl}
+                alt={previewTicket.summary}
+                className="max-h-[60vh] w-auto max-w-full object-contain rounded-lg"
+              />
+            </div>
+
+            {/* Metadata / Footer */}
+            <div className="space-y-1.5 pt-1 text-xs border-t border-zinc-800">
+              <p className="font-medium text-zinc-200">
+                {previewTicket.summary}
+              </p>
+              <div className="flex items-center gap-1.5 text-zinc-400">
+                <MapPin className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                <span className="truncate">{previewTicket.location.address}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* RESOLUTION PROOF MODAL */}
       {activeTicket && (
