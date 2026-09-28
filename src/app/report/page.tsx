@@ -15,6 +15,7 @@ import {
   RefreshCw,
   Trash2,
   Volume2,
+  Loader2,
 } from "lucide-react";
 import { Ticket } from "@/lib/store";
 
@@ -44,10 +45,11 @@ export default function CitizenReportPage() {
   const [textDescription, setTextDescription] = useState<string>("");
   const [citizenPhone, setCitizenPhone] = useState<string>("");
 
-  // Submission & Results State
+  // Submission & Results State with Idempotency Protection
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [createdTicket, setCreatedTicket] = useState<Ticket | null>(null);
+  const submissionLockRef = useRef(false);
 
   // Request HTML5 Geolocation
   const requestLocation = () => {
@@ -86,6 +88,7 @@ export default function CitizenReportPage() {
 
   // Audio Recording Handlers
   const startRecording = async () => {
+    if (isSubmitting) return;
     setAudioBlob(null);
     setAudioUrl(null);
     audioChunksRef.current = [];
@@ -139,6 +142,7 @@ export default function CitizenReportPage() {
   };
 
   const removeAudio = () => {
+    if (isSubmitting) return;
     setAudioBlob(null);
     if (audioUrl) {
       URL.revokeObjectURL(audioUrl);
@@ -147,17 +151,24 @@ export default function CitizenReportPage() {
     setRecordingSeconds(0);
   };
 
-  // Image Upload Handlers
+  // Image Upload Handlers with 5MB Pre-flight Check
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (isSubmitting) return;
     const file = e.target.files?.[0];
     if (file) {
+      if (file.size > 5 * 1024 * 1024) {
+        setSubmitError("Uploaded photograph exceeds the 5MB limit. Please choose a smaller photo.");
+        return;
+      }
       setImageFile(file);
       const url = URL.createObjectURL(file);
       setImagePreview(url);
+      setSubmitError(null);
     }
   };
 
   const removeImage = () => {
+    if (isSubmitting) return;
     setImageFile(null);
     if (imagePreview) {
       URL.revokeObjectURL(imagePreview);
@@ -165,9 +176,13 @@ export default function CitizenReportPage() {
     }
   };
 
-  // Submit Handler
+  // Submit Handler with Client-Side Idempotency Lock
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (submissionLockRef.current || isSubmitting) {
+      return;
+    }
+
     setSubmitError(null);
 
     if (!audioBlob && !textDescription.trim()) {
@@ -175,6 +190,7 @@ export default function CitizenReportPage() {
       return;
     }
 
+    submissionLockRef.current = true;
     setIsSubmitting(true);
 
     try {
@@ -214,6 +230,7 @@ export default function CitizenReportPage() {
       setSubmitError(msg);
     } finally {
       setIsSubmitting(false);
+      submissionLockRef.current = false;
     }
   };
 
@@ -339,7 +356,8 @@ export default function CitizenReportPage() {
                   <button
                     type="button"
                     onClick={startRecording}
-                    className="inline-flex items-center justify-center gap-2.5 rounded-xl bg-emerald-500 px-6 py-3.5 text-sm font-bold text-zinc-950 hover:bg-emerald-400 transition-transform active:scale-95 min-h-[48px] w-full sm:w-auto shadow-md"
+                    disabled={isSubmitting}
+                    className="inline-flex items-center justify-center gap-2.5 rounded-xl bg-emerald-500 px-6 py-3.5 text-sm font-bold text-zinc-950 hover:bg-emerald-400 transition-transform active:scale-95 min-h-[48px] w-full sm:w-auto shadow-md disabled:opacity-50"
                   >
                     <Mic className="h-5 w-5" />
                     Record Grievance
@@ -385,7 +403,8 @@ export default function CitizenReportPage() {
                     <button
                       type="button"
                       onClick={removeAudio}
-                      className="text-zinc-400 hover:text-red-400 transition-colors"
+                      disabled={isSubmitting}
+                      className="text-zinc-400 hover:text-red-400 transition-colors disabled:opacity-40"
                       title="Delete recording"
                     >
                       <Trash2 className="h-4 w-4" />
@@ -404,9 +423,10 @@ export default function CitizenReportPage() {
                   id="textDescription"
                   rows={2}
                   value={textDescription}
+                  disabled={isSubmitting}
                   onChange={(e) => setTextDescription(e.target.value)}
                   placeholder="e.g. 2-meter wide asphalt pothole right outside Indiranagar Metro Pillar #42"
-                  className="w-full rounded-xl border border-zinc-800 bg-zinc-950 p-3 text-xs sm:text-sm text-zinc-200 placeholder:text-zinc-600 focus:border-emerald-500 focus:outline-none"
+                  className="w-full rounded-xl border border-zinc-800 bg-zinc-950 p-3 text-xs sm:text-sm text-zinc-200 placeholder:text-zinc-600 focus:border-emerald-500 focus:outline-none disabled:opacity-50"
                 />
               </div>
             </div>
@@ -419,16 +439,21 @@ export default function CitizenReportPage() {
               </label>
 
               {!imagePreview ? (
-                <label className="flex flex-col items-center justify-center rounded-xl border border-dashed border-zinc-700 bg-zinc-900/40 p-5 sm:p-6 text-center cursor-pointer hover:border-emerald-500/50 transition-colors min-h-[140px]">
+                <label
+                  className={`flex flex-col items-center justify-center rounded-xl border border-dashed border-zinc-700 bg-zinc-900/40 p-5 sm:p-6 text-center cursor-pointer hover:border-emerald-500/50 transition-colors min-h-[140px] ${
+                    isSubmitting ? "pointer-events-none opacity-50" : ""
+                  }`}
+                >
                   <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-zinc-800 text-zinc-400 mb-2">
                     <Camera className="h-6 w-6 text-emerald-400" />
                   </div>
                   <span className="text-sm font-semibold text-zinc-200">Tap to capture or upload photo</span>
-                  <span className="text-xs text-zinc-500 mt-1">Live camera preferred (capture=&quot;environment&quot;)</span>
+                  <span className="text-xs text-zinc-500 mt-1">Live camera preferred (&lt; 5MB)</span>
                   <input
                     type="file"
                     accept="image/*"
                     capture="environment"
+                    disabled={isSubmitting}
                     onChange={handleImageChange}
                     className="hidden"
                   />
@@ -440,15 +465,17 @@ export default function CitizenReportPage() {
                     alt="Hazard site preview"
                     className="w-full h-44 sm:h-52 object-cover"
                   />
-                  <button
-                    type="button"
-                    onClick={removeImage}
-                    className="absolute top-2 right-2 rounded-xl bg-zinc-900/90 p-2.5 text-zinc-300 hover:text-red-400 transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center shadow-md"
-                    title="Remove photo"
-                    aria-label="Remove photo"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
+                  {!isSubmitting && (
+                    <button
+                      type="button"
+                      onClick={removeImage}
+                      className="absolute top-2 right-2 rounded-xl bg-zinc-900/90 p-2.5 text-zinc-300 hover:text-red-400 transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center shadow-md"
+                      title="Remove photo"
+                      aria-label="Remove photo"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  )}
                 </div>
               )}
             </div>
@@ -463,8 +490,8 @@ export default function CitizenReportPage() {
                 <button
                   type="button"
                   onClick={requestLocation}
-                  disabled={isLocating}
-                  className="text-xs text-emerald-400 hover:underline inline-flex items-center gap-1"
+                  disabled={isLocating || isSubmitting}
+                  className="text-xs text-emerald-400 hover:underline inline-flex items-center gap-1 disabled:opacity-50"
                 >
                   <RefreshCw className={`h-3 w-3 ${isLocating ? "animate-spin" : ""}`} />
                   Refresh GPS
@@ -500,8 +527,9 @@ export default function CitizenReportPage() {
                   <select
                     id="wardSelect"
                     value={wardNumber}
+                    disabled={isSubmitting}
                     onChange={(e) => setWardNumber(parseInt(e.target.value, 10))}
-                    className="w-full rounded-xl border border-zinc-800 bg-zinc-950 p-2.5 text-xs sm:text-sm text-zinc-200 focus:border-emerald-500 focus:outline-none"
+                    className="w-full rounded-xl border border-zinc-800 bg-zinc-950 p-2.5 text-xs sm:text-sm text-zinc-200 focus:border-emerald-500 focus:outline-none disabled:opacity-50"
                   >
                     <option value={84}>Ward 84 – Indiranagar</option>
                     <option value={112}>Ward 112 – Domlur</option>
@@ -516,9 +544,10 @@ export default function CitizenReportPage() {
                     id="citizenPhone"
                     type="tel"
                     value={citizenPhone}
+                    disabled={isSubmitting}
                     onChange={(e) => setCitizenPhone(e.target.value)}
                     placeholder="9845012345"
-                    className="w-full rounded-xl border border-zinc-800 bg-zinc-950 p-2.5 text-xs sm:text-sm text-zinc-200 placeholder:text-zinc-600 focus:border-emerald-500 focus:outline-none"
+                    className="w-full rounded-xl border border-zinc-800 bg-zinc-950 p-2.5 text-xs sm:text-sm text-zinc-200 placeholder:text-zinc-600 focus:border-emerald-500 focus:outline-none disabled:opacity-50"
                   />
                 </div>
               </div>
@@ -532,8 +561,8 @@ export default function CitizenReportPage() {
             >
               {isSubmitting ? (
                 <>
-                  <RefreshCw className="h-5 w-5 animate-spin" />
-                  <span>Processing Grievance with Gemini 2.5 Flash...</span>
+                  <Loader2 className="h-5 w-5 animate-spin text-zinc-950" />
+                  <span>Processing Grievance with Gemini...</span>
                 </>
               ) : (
                 <>

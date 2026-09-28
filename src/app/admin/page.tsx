@@ -67,7 +67,12 @@ export default function AdminDashboardPage() {
   }, []);
 
   const metrics: AdminMetrics = calculateAdminMetrics(tickets);
-  const contractorScores: ContractorIntegrityScore[] = calculateContractorIntegrityScores(tickets);
+
+  const contractorTickets =
+    selectedWard === "ALL"
+      ? tickets
+      : tickets.filter((t) => t.location.wardNumber === selectedWard);
+  const contractorScores: ContractorIntegrityScore[] = calculateContractorIntegrityScores(contractorTickets);
 
   const filteredTickets = tickets.filter((t) => {
     if (selectedWard !== "ALL" && t.location.wardNumber !== selectedWard) return false;
@@ -330,7 +335,35 @@ export default function AdminDashboardPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-zinc-800/80">
-                    {contractorScores.map((c) => {
+                    {contractorScores.length === 0 ? (
+                      <tr>
+                        <td colSpan={8} className="py-16 text-center">
+                          <div className="flex flex-col items-center justify-center space-y-3">
+                            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-zinc-800/80 text-zinc-500 border border-zinc-700/50 shadow-inner">
+                              <Award className="h-6 w-6" />
+                            </div>
+                            <div className="space-y-1">
+                              <span className="text-sm font-bold text-zinc-300 block">
+                                No Contractor Performance Data Available
+                              </span>
+                              <span className="text-xs text-zinc-500 max-w-sm block mx-auto">
+                                No active municipal contractor work orders or audit submissions found for the selected ward criteria.
+                              </span>
+                            </div>
+                            {selectedWard !== "ALL" && (
+                              <button
+                                onClick={() => setSelectedWard("ALL")}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-xs font-semibold text-zinc-300 transition-colors"
+                              >
+                                <RefreshCw className="h-3 w-3" />
+                                Show All Municipal Wards
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ) : (
+                      contractorScores.map((c) => {
                       const isTierA = c.tier === "TIER_A_TRUSTED";
                       const isTierB = c.tier === "TIER_B_PROBATIONARY";
                       return (
@@ -382,7 +415,7 @@ export default function AdminDashboardPage() {
                           </td>
                         </tr>
                       );
-                    })}
+                    }))}
                   </tbody>
                 </table>
               </div>
@@ -421,8 +454,34 @@ export default function AdminDashboardPage() {
                   <tbody className="divide-y divide-zinc-800/80">
                     {auditedTickets.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="py-8 text-center text-zinc-500 text-xs">
-                          No completed or pending audits found for selected filters.
+                        <td colSpan={6} className="py-16 text-center">
+                          <div className="flex flex-col items-center justify-center space-y-3">
+                            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-zinc-800/80 text-zinc-500 border border-zinc-700/50 shadow-inner">
+                              <FileCheck2 className="h-6 w-6" />
+                            </div>
+                            <div className="space-y-1">
+                              <span className="text-sm font-bold text-zinc-300 block">
+                                No Forensic Audits Match Your Filters
+                              </span>
+                              <span className="text-xs text-zinc-500 max-w-sm block mx-auto">
+                                {searchQuery
+                                  ? `No audit dossiers match query "${searchQuery}". Try clearing your search keywords.`
+                                  : "No verification dossiers currently match the selected ward filter."}
+                              </span>
+                            </div>
+                            {(selectedWard !== "ALL" || searchQuery.trim()) && (
+                              <button
+                                onClick={() => {
+                                  setSelectedWard("ALL");
+                                  setSearchQuery("");
+                                }}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-xs font-semibold text-zinc-300 transition-colors"
+                              >
+                                <RefreshCw className="h-3 w-3" />
+                                Reset Filters & Search
+                              </button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     ) : (

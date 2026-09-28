@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   Wrench,
   Camera,
@@ -8,6 +8,7 @@ import {
   Clock,
   AlertTriangle,
   CheckCircle,
+  CheckCircle2,
   XCircle,
   RefreshCw,
   Eye,
@@ -16,10 +17,31 @@ import {
   X,
   FileCheck2,
   Zap,
+  Loader2,
+  Sparkles,
 } from "lucide-react";
 import { Ticket, TicketStatus } from "@/lib/store";
 import { VerificationAudit } from "@/lib/schemas/audit";
 import { calculateHaversineDistanceMeters } from "@/lib/geo";
+
+const AUDIT_STEPS = [
+  {
+    title: "Verifying geofence boundary & GPS telemetry...",
+    desc: "Validating on-site coordinates against the municipal 50-meter incident perimeter.",
+  },
+  {
+    title: "Analyzing surface materials with Gemini...",
+    desc: "Inspecting asphalt compaction, bituminous hot-mix patching, or solid waste clearance.",
+  },
+  {
+    title: "Validating background landmarks & perspective...",
+    desc: "Cross-referencing invariant structural anchors (utility poles, walls, signs) across before & after photos.",
+  },
+  {
+    title: "Synthesizing forensic verification consensus...",
+    desc: "Evaluating algorithmic confidence thresholds to enforce autonomous PASS/FAIL/HITL governance.",
+  },
+];
 
 export default function ContractorPortalPage() {
   const [tickets, setTickets] = useState<Ticket[]>([]);
@@ -42,10 +64,26 @@ export default function ContractorPortalPage() {
   const [isLocating, setIsLocating] = useState(false);
   const [gpsSimulated, setGpsSimulated] = useState(false);
 
-  // Audit Submission State
+  // Audit Submission State & Idempotency Lock
   const [isAuditing, setIsAuditing] = useState(false);
+  const [auditStepIndex, setAuditStepIndex] = useState(0);
   const [auditResult, setAuditResult] = useState<VerificationAudit | null>(null);
   const [auditError, setAuditError] = useState<string | null>(null);
+  const submissionLockRef = useRef(false);
+
+  // Step-by-step progress rotator during audit verification
+  useEffect(() => {
+    if (!isAuditing) {
+      setAuditStepIndex(0);
+      return;
+    }
+
+    const interval = setInterval(() => {
+      setAuditStepIndex((prev) => (prev < AUDIT_STEPS.length - 1 ? prev + 1 : prev));
+    }, 2800);
+
+    return () => clearInterval(interval);
+  }, [isAuditing]);
 
   // Fetch Tickets
   const fetchTickets = async () => {
@@ -85,7 +123,7 @@ export default function ContractorPortalPage() {
 
   // Modal Location Handler
   const acquireLocation = (simulateExact = false) => {
-    if (!activeTicket) return;
+    if (!activeTicket || isAuditing) return;
 
     if (simulateExact) {
       // Simulate exact coordinates within 8m of the ticket
@@ -98,7 +136,6 @@ export default function ContractorPortalPage() {
     setGpsSimulated(false);
     setIsLocating(true);
     if (!navigator.geolocation) {
-      // Fallback
       setContractorLat(activeTicket.location.latitude + 0.00005);
       setContractorLon(activeTicket.location.longitude + 0.00004);
       setIsLocating(false);
@@ -112,7 +149,6 @@ export default function ContractorPortalPage() {
         setIsLocating(false);
       },
       () => {
-        // Fallback simulate exact if blocked
         setContractorLat(activeTicket.location.latitude + 0.00005);
         setContractorLon(activeTicket.location.longitude + 0.00004);
         setGpsSimulated(true);
@@ -124,11 +160,13 @@ export default function ContractorPortalPage() {
 
   // Open Modal
   const openModal = (ticket: Ticket) => {
+    if (isAuditing) return;
     setActiveTicket(ticket);
     setProofImage(null);
     setProofPreview(null);
     setAuditResult(null);
     setAuditError(null);
+    setAuditStepIndex(0);
     // Auto simulate exact GPS by default for convenience, or acquire live
     setContractorLat(ticket.location.latitude + 0.00005);
     setContractorLon(ticket.location.longitude + 0.00004);
@@ -136,6 +174,7 @@ export default function ContractorPortalPage() {
   };
 
   const closeModal = () => {
+    if (isAuditing) return;
     setActiveTicket(null);
     if (proofPreview) {
       URL.revokeObjectURL(proofPreview);
@@ -144,20 +183,27 @@ export default function ContractorPortalPage() {
     setProofImage(null);
     setAuditResult(null);
     setAuditError(null);
+    setAuditStepIndex(0);
   };
 
   const handleProofImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (isAuditing) return;
     const file = e.target.files?.[0];
     if (file) {
+      if (file.size > 5 * 1024 * 1024) {
+        setAuditError("Selected image exceeds 5MB limit. Please choose a smaller photo.");
+        return;
+      }
       setProofImage(file);
       const url = URL.createObjectURL(file);
       setProofPreview(url);
+      setAuditError(null);
     }
   };
 
-  // Quick Demo Preset Loader
+  // Quick Demo Preset Loader (Preserving 100% functionality)
   const loadDemoPreset = async (preset: "genuine" | "fraud") => {
-    if (!activeTicket) return;
+    if (!activeTicket || isAuditing) return;
     try {
       const filename = preset === "genuine" ? "genuine-after.jpg" : "fraud-after.jpg";
       const res = await fetch(`/demo/${filename}`);
@@ -193,14 +239,20 @@ export default function ContractorPortalPage() {
     }
   };
 
-  // Submit Audit Request
+  // Submit Audit Request with Idempotency Protection
   const handleSubmitAudit = async () => {
+    if (submissionLockRef.current || isAuditing) {
+      return;
+    }
+
     if (!activeTicket || !proofImage || contractorLat === null || contractorLon === null) {
       setAuditError("Please capture proof image and ensure GPS is acquired.");
       return;
     }
 
+    submissionLockRef.current = true;
     setIsAuditing(true);
+    setAuditStepIndex(0);
     setAuditError(null);
     setAuditResult(null);
 
@@ -226,13 +278,14 @@ export default function ContractorPortalPage() {
       }
 
       setAuditResult(data.audit);
-      // Refresh tickets to reflect updated status
+      // Refresh tickets to reflect updated status in real time
       fetchTickets();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Error verifying resolution proof.";
       setAuditError(msg);
     } finally {
       setIsAuditing(false);
+      submissionLockRef.current = false;
     }
   };
 
@@ -271,8 +324,8 @@ export default function ContractorPortalPage() {
 
           <button
             onClick={fetchTickets}
-            disabled={isLoading}
-            className="inline-flex items-center gap-2 rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-2.5 text-xs sm:text-sm font-semibold text-zinc-200 hover:bg-zinc-800 transition-colors self-start sm:self-auto"
+            disabled={isLoading || isAuditing}
+            className="inline-flex items-center gap-2 rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-2.5 text-xs sm:text-sm font-semibold text-zinc-200 hover:bg-zinc-800 transition-colors self-start sm:self-auto disabled:opacity-50"
           >
             <RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin text-emerald-400" : ""}`} />
             Refresh Feed
@@ -295,6 +348,7 @@ export default function ContractorPortalPage() {
               <button
                 key={w.label}
                 onClick={() => setSelectedWard(w.val as number | "ALL")}
+                disabled={isAuditing}
                 className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
                   selectedWard === w.val
                     ? "bg-emerald-500 text-zinc-950 font-bold"
@@ -313,6 +367,7 @@ export default function ContractorPortalPage() {
           </div>
           <select
             value={selectedStatus}
+            disabled={isAuditing}
             onChange={(e) => setSelectedStatus(e.target.value)}
             className="rounded-lg border border-zinc-700 bg-zinc-800 px-2.5 py-1 text-xs text-zinc-200 focus:outline-none"
           >
@@ -332,16 +387,55 @@ export default function ContractorPortalPage() {
 
         {/* Work Orders Grid */}
         {isLoading ? (
+          /* Polished Skeleton Cards */
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
-            {[1, 2, 3].map((i) => (
-              <div key={i} className="h-80 rounded-2xl bg-zinc-900/60 animate-pulse border border-zinc-800" />
+            {[1, 2, 3, 4, 5, 6].map((i) => (
+              <div
+                key={i}
+                className="rounded-2xl border border-zinc-800 bg-zinc-900/40 overflow-hidden flex flex-col animate-pulse"
+              >
+                <div className="h-44 bg-zinc-800/60 relative">
+                  <div className="absolute top-3 left-3 h-5 w-24 rounded bg-zinc-700/60" />
+                  <div className="absolute top-3 right-3 h-5 w-20 rounded bg-zinc-700/60" />
+                  <div className="absolute bottom-3 left-3 right-3 h-7 rounded bg-zinc-900/80" />
+                </div>
+                <div className="p-4 space-y-3 flex-1 flex flex-col justify-between">
+                  <div className="space-y-2">
+                    <div className="h-4 w-3/4 rounded bg-zinc-800/80" />
+                    <div className="h-3 w-full rounded bg-zinc-800/50" />
+                    <div className="h-3 w-2/3 rounded bg-zinc-800/50" />
+                  </div>
+                  <div className="pt-2 border-t border-zinc-800/80">
+                    <div className="h-9 w-full rounded-xl bg-zinc-800/80" />
+                  </div>
+                </div>
+              </div>
             ))}
           </div>
         ) : filteredTickets.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-zinc-800 bg-zinc-900/20 p-12 text-center">
-            <CheckCircle className="h-10 w-10 text-zinc-600 mx-auto mb-3" />
-            <h3 className="text-base font-semibold text-zinc-300">No matching work orders</h3>
-            <p className="text-xs text-zinc-500 mt-1">Try switching filters or reporting a new civic hazard.</p>
+          /* Polished Civic Empty State */
+          <div className="rounded-2xl border border-dashed border-emerald-500/30 bg-emerald-950/10 p-12 text-center space-y-4">
+            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 shadow-lg shadow-emerald-950/50">
+              <CheckCircle2 className="h-8 w-8" />
+            </div>
+            <div className="space-y-1.5">
+              <h3 className="text-lg font-bold text-white">
+                No pending grievances found for this ward. Great job!
+              </h3>
+              <p className="text-xs sm:text-sm text-zinc-400 max-w-md mx-auto">
+                All reported civic issues in this sector have been resolved or verified. You can switch filters or check back later for newly dispatched field assignments.
+              </p>
+            </div>
+            <button
+              onClick={() => {
+                setSelectedWard("ALL");
+                setSelectedStatus("ALL");
+              }}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xs font-semibold text-zinc-200 transition-colors"
+            >
+              <RefreshCw className="h-3.5 w-3.5" />
+              Reset Filters
+            </button>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
@@ -441,7 +535,8 @@ export default function ContractorPortalPage() {
                       ) : (
                         <button
                           onClick={() => openModal(ticket)}
-                          className="w-full rounded-xl bg-blue-600 px-3.5 py-2.5 text-xs sm:text-sm font-semibold text-white hover:bg-blue-500 transition-colors flex items-center justify-center gap-2"
+                          disabled={isAuditing}
+                          className="w-full rounded-xl bg-blue-600 px-3.5 py-2.5 text-xs sm:text-sm font-semibold text-white hover:bg-blue-500 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
                         >
                           <Camera className="h-4 w-4" />
                           <span>Submit Resolution Proof</span>
@@ -472,7 +567,8 @@ export default function ContractorPortalPage() {
               </div>
               <button
                 onClick={closeModal}
-                className="rounded-lg p-1.5 text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
+                disabled={isAuditing}
+                className="rounded-lg p-1.5 text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors disabled:opacity-30"
               >
                 <X className="h-5 w-5" />
               </button>
@@ -488,7 +584,8 @@ export default function ContractorPortalPage() {
                 <button
                   type="button"
                   onClick={() => loadDemoPreset("genuine")}
-                  className="px-2.5 py-1.5 rounded-lg bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/30 text-xs font-semibold transition-colors flex items-center gap-1.5"
+                  disabled={isAuditing}
+                  className="px-2.5 py-1.5 rounded-lg bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/30 text-xs font-semibold transition-colors flex items-center gap-1.5 disabled:opacity-40"
                 >
                   <CheckCircle className="h-3.5 w-3.5 text-emerald-400" />
                   ⚡ Load Genuine Fix (Hot-Mix Asphalt)
@@ -496,7 +593,8 @@ export default function ContractorPortalPage() {
                 <button
                   type="button"
                   onClick={() => loadDemoPreset("fraud")}
-                  className="px-2.5 py-1.5 rounded-lg bg-red-500/20 border border-red-500/30 text-red-300 hover:bg-red-500/30 text-xs font-semibold transition-colors flex items-center gap-1.5"
+                  disabled={isAuditing}
+                  className="px-2.5 py-1.5 rounded-lg bg-red-500/20 border border-red-500/30 text-red-300 hover:bg-red-500/30 text-xs font-semibold transition-colors flex items-center gap-1.5 disabled:opacity-40"
                 >
                   <AlertTriangle className="h-3.5 w-3.5 text-red-400" />
                   ⚡ Load Fraud Attempt (Superficial Dirt)
@@ -504,7 +602,7 @@ export default function ContractorPortalPage() {
               </div>
             </div>
 
-            {/* Side-by-side or stacked reference */}
+            {/* Side-by-side photo comparison */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <span className="text-[11px] font-semibold text-zinc-400 flex items-center gap-1">
@@ -532,26 +630,33 @@ export default function ContractorPortalPage() {
                       alt="Repair Proof"
                       className="w-full h-full object-cover"
                     />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setProofImage(null);
-                        setProofPreview(null);
-                      }}
-                      className="absolute top-2 right-2 rounded-lg bg-zinc-900/80 p-1.5 text-zinc-300 hover:text-red-400"
-                    >
-                      <X className="h-4 w-4" />
-                    </button>
+                    {!isAuditing && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setProofImage(null);
+                          setProofPreview(null);
+                        }}
+                        className="absolute top-2 right-2 rounded-lg bg-zinc-900/80 p-1.5 text-zinc-300 hover:text-red-400"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    )}
                   </div>
                 ) : (
-                  <label className="flex flex-col items-center justify-center h-36 rounded-xl border border-dashed border-zinc-700 bg-zinc-950/60 p-4 text-center cursor-pointer hover:border-emerald-500/50 transition-colors">
+                  <label
+                    className={`flex flex-col items-center justify-center h-36 rounded-xl border border-dashed border-zinc-700 bg-zinc-950/60 p-4 text-center cursor-pointer hover:border-emerald-500/50 transition-colors ${
+                      isAuditing ? "pointer-events-none opacity-50" : ""
+                    }`}
+                  >
                     <Camera className="h-6 w-6 text-zinc-500 mb-1" />
                     <span className="text-xs font-medium text-zinc-300">Tap to capture repair photo</span>
-                    <span className="text-[10px] text-zinc-500">Live camera preferred</span>
+                    <span className="text-[10px] text-zinc-500">Live camera preferred (&lt; 5MB)</span>
                     <input
                       type="file"
                       accept="image/*"
                       capture="environment"
+                      disabled={isAuditing}
                       onChange={handleProofImageChange}
                       className="hidden"
                     />
@@ -571,8 +676,8 @@ export default function ContractorPortalPage() {
                   <button
                     type="button"
                     onClick={() => acquireLocation(false)}
-                    disabled={isLocating}
-                    className="text-[11px] text-blue-400 hover:underline"
+                    disabled={isLocating || isAuditing}
+                    className="text-[11px] text-blue-400 hover:underline disabled:opacity-40"
                   >
                     {isLocating ? "Locating..." : "Use Live GPS"}
                   </button>
@@ -580,7 +685,8 @@ export default function ContractorPortalPage() {
                   <button
                     type="button"
                     onClick={() => acquireLocation(true)}
-                    className="text-[11px] text-emerald-400 hover:underline"
+                    disabled={isAuditing}
+                    className="text-[11px] text-emerald-400 hover:underline disabled:opacity-40"
                   >
                     Simulate On-Site (8m)
                   </button>
@@ -630,8 +736,48 @@ export default function ContractorPortalPage() {
               </div>
             )}
 
+            {/* STEP-BY-STEP AUDIT PROCESSING INDICATOR */}
+            {isAuditing && (
+              <div className="rounded-2xl border border-blue-500/30 bg-blue-950/20 p-5 space-y-4 animate-in fade-in duration-300">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-500/20 text-blue-400">
+                      <Loader2 className="h-5 w-5 animate-spin" />
+                    </div>
+                    <div>
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-blue-400">
+                        Autonomous Forensic Verification in Progress
+                      </span>
+                      <h4 className="text-sm font-semibold text-white">
+                        {AUDIT_STEPS[auditStepIndex].title}
+                      </h4>
+                    </div>
+                  </div>
+                  <span className="text-xs font-mono tracking-tight tabular-nums text-zinc-400">
+                    Step {auditStepIndex + 1} of {AUDIT_STEPS.length}
+                  </span>
+                </div>
+
+                <p className="text-xs text-zinc-400 pl-11">
+                  {AUDIT_STEPS[auditStepIndex].desc}
+                </p>
+
+                {/* Progress Segment Bars */}
+                <div className="grid grid-cols-4 gap-2 pt-1 pl-11">
+                  {AUDIT_STEPS.map((_, idx) => (
+                    <div
+                      key={idx}
+                      className={`h-1.5 rounded-full transition-all duration-500 ${
+                        idx <= auditStepIndex ? "bg-emerald-400" : "bg-zinc-800"
+                      }`}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* AUDIT VERDICT CARD */}
-            {auditResult && (
+            {auditResult && !isAuditing && (
               <div
                 className={`rounded-2xl border p-5 space-y-4 ${
                   auditResult.decision === "PASS"
@@ -723,7 +869,8 @@ export default function ContractorPortalPage() {
               <button
                 type="button"
                 onClick={closeModal}
-                className="rounded-xl border border-zinc-700 bg-zinc-800 px-4 py-3 text-xs sm:text-sm font-semibold text-zinc-300 hover:bg-zinc-700 transition-colors min-h-[44px]"
+                disabled={isAuditing}
+                className="rounded-xl border border-zinc-700 bg-zinc-800 px-4 py-3 text-xs sm:text-sm font-semibold text-zinc-300 hover:bg-zinc-700 transition-colors min-h-[44px] disabled:opacity-40"
               >
                 Close
               </button>
@@ -741,8 +888,8 @@ export default function ContractorPortalPage() {
               >
                 {isAuditing ? (
                   <>
-                    <RefreshCw className="h-4 w-4 animate-spin" />
-                    <span>Gemini 2.5 Auditing...</span>
+                    <Loader2 className="h-4 w-4 animate-spin text-zinc-950" />
+                    <span>Verifying with Gemini...</span>
                   </>
                 ) : (
                   <>
