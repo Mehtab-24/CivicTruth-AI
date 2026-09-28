@@ -811,3 +811,10 @@ export function updateTicketAudit(
   ticketStore.tickets.set(id, updated);
   return updated;
 }
+
+/**
+ * Returns the total count of tickets in the active ticket store.
+ */
+export function getStoreSize(): number {
+  return ticketStore.tickets.size;
+}

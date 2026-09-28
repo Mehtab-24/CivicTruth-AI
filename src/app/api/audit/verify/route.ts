@@ -1,8 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
-import { ai } from "@/lib/gemini";
+import { ai, withGeminiTimeout, isTimeoutError } from "@/lib/gemini";
 import { VerificationAuditSchema, VerificationAudit } from "@/lib/schemas/audit";
 import { isWithinGeofence } from "@/lib/geo";
 import { getTicketById, updateTicketAudit, TicketStatus } from "@/lib/store";
+import { checkRateLimit } from "@/lib/rate-limit";
+import {
+  validateFileSize,
+  optimizeImageBuffer,
+  optimizeBase64OrDataUri,
+  MAX_IMAGE_SIZE_BYTES,
+} from "@/lib/image";
+import { logger } from "@/lib/logger";
 
 export const dynamic = "force-dynamic";
 
@@ -43,7 +51,7 @@ interface ImageInlineData {
 }
 
 /**
- * Extracts inline base64 image data from either a URL or data URI.
+ * Extracts, optimizes, and resizes image data using Sharp (max 1600px, 85% JPEG).
  */
 async function resolveImagePart(
   sourceUrl: string,
@@ -51,10 +59,13 @@ async function resolveImagePart(
 ): Promise<ImageInlineData> {
   if (fallbackFile && fallbackFile.size > 0) {
     const arrayBuffer = await fallbackFile.arrayBuffer();
-    const data = Buffer.from(arrayBuffer).toString("base64");
+    const optimized = await optimizeImageBuffer(
+      Buffer.from(arrayBuffer),
+      fallbackFile.type || "image/jpeg"
+    );
     return {
-      mimeType: fallbackFile.type || "image/jpeg",
-      data,
+      mimeType: optimized.mimeType,
+      data: optimized.data,
     };
   }
 
@@ -63,30 +74,33 @@ async function resolveImagePart(
   }
 
   if (sourceUrl.startsWith("data:")) {
-    const match = sourceUrl.match(/^data:([^;]+);base64,(.+)$/);
-    if (!match) {
-      throw new Error("Invalid base64 data URI format for image.");
-    }
+    const optimized = await optimizeBase64OrDataUri(sourceUrl);
     return {
-      mimeType: match[1],
-      data: match[2],
+      mimeType: optimized.mimeType,
+      data: optimized.data,
     };
   }
 
-  // Fetch remote image
+  // Fetch remote image and optimize
   const response = await fetch(sourceUrl);
   if (!response.ok) {
     throw new Error(`Failed to fetch image from URL: ${response.statusText}`);
   }
 
   const arrayBuffer = await response.arrayBuffer();
-  const data = Buffer.from(arrayBuffer).toString("base64");
   const mimeType = response.headers.get("content-type") || "image/jpeg";
+  const optimized = await optimizeImageBuffer(Buffer.from(arrayBuffer), mimeType);
 
-  return { mimeType, data };
+  return { mimeType: optimized.mimeType, data: optimized.data };
 }
 
 export async function POST(request: NextRequest) {
+  // 1. Sliding-window rate limit: 20 requests per minute per IP
+  const rateLimit = checkRateLimit(request, "audit_verify", 20, 60000);
+  if (!rateLimit.allowed) {
+    return rateLimit.response!;
+  }
+
   try {
     const formData = await request.formData();
 
@@ -106,7 +120,7 @@ export async function POST(request: NextRequest) {
       (formData.get("originLongitude") as string | null) ||
       (formData.get("ticketLongitude") as string | null);
 
-    // 1. Boundary Input Validation
+    // 2. Boundary Input Validation
     if (!ticketId) {
       return NextResponse.json(
         {
@@ -131,6 +145,19 @@ export async function POST(request: NextRequest) {
         },
         { status: 400 }
       );
+    }
+
+    // 3. Upload Constraints: 5MB ceiling on uploaded images
+    const contractorSizeValidation = validateFileSize(contractorImage, "contractorImage", MAX_IMAGE_SIZE_BYTES);
+    if (!contractorSizeValidation.valid) {
+      return contractorSizeValidation.response!;
+    }
+
+    if (originalImageFile && originalImageFile.size > 0) {
+      const origSizeValidation = validateFileSize(originalImageFile, "originalImage", MAX_IMAGE_SIZE_BYTES);
+      if (!origSizeValidation.valid) {
+        return origSizeValidation.response!;
+      }
     }
 
     const existingTicket = getTicketById(ticketId);
@@ -192,7 +219,7 @@ export async function POST(request: NextRequest) {
       ? existingTicket.location.longitude
       : contractorLon;
 
-    // 2. Geofence Distance Validation (50-meter threshold)
+    // 4. Geofence Distance Validation (50-meter threshold)
     const geofence = isWithinGeofence(
       { latitude: contractorLat, longitude: contractorLon },
       { latitude: originLat, longitude: originLon },
@@ -200,6 +227,12 @@ export async function POST(request: NextRequest) {
     );
 
     if (!geofence.isWithin) {
+      logger.warn("Contractor geofence breach detected", {
+        ticketId,
+        distanceMeters: geofence.distanceMeters,
+        threshold: 50,
+      });
+
       return NextResponse.json(
         {
           success: false,
@@ -214,19 +247,24 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 3. Multimodal Image Buffer Resolution & Base64 Conversion
+    // 5. Multimodal Image Buffer Resolution & Sharp Optimization
     const originalImagePart = await resolveImagePart(
       resolvedOriginalImageUrl,
       originalImageFile
     );
 
     const contractorArrayBuffer = await contractorImage.arrayBuffer();
+    const optimizedContractor = await optimizeImageBuffer(
+      Buffer.from(contractorArrayBuffer),
+      contractorImage.type || "image/jpeg"
+    );
+
     const contractorImagePart: ImageInlineData = {
-      mimeType: contractorImage.type || "image/jpeg",
-      data: Buffer.from(contractorArrayBuffer).toString("base64"),
+      mimeType: optimizedContractor.mimeType,
+      data: optimizedContractor.data,
     };
 
-    // 4. Autonomous Multimodal Audit with Gemini 1.5 Pro
+    // 6. Autonomous Multimodal Audit with Gemini (enforcing 15-second AbortSignal timeout)
     const promptMessage = `IMAGE 1: The original citizen complaint showing the civic hazard.
 IMAGE 2: The contractor's claimed repair resolution photo.
 
@@ -255,33 +293,36 @@ Output strictly valid JSON matching this schema:
 
     for (const modelName of modelsToTry) {
       try {
-        const modelResponse = await ai.models.generateContent({
-          model: modelName,
-          contents: [
-            {
-              role: "user",
-              parts: [
-                { text: promptMessage },
-                {
-                  inlineData: {
-                    mimeType: originalImagePart.mimeType,
-                    data: originalImagePart.data,
+        const modelResponse = await withGeminiTimeout(async (signal) => {
+          return ai.models.generateContent({
+            model: modelName,
+            contents: [
+              {
+                role: "user",
+                parts: [
+                  { text: promptMessage },
+                  {
+                    inlineData: {
+                      mimeType: originalImagePart.mimeType,
+                      data: originalImagePart.data,
+                    },
                   },
-                },
-                {
-                  inlineData: {
-                    mimeType: contractorImagePart.mimeType,
-                    data: contractorImagePart.data,
+                  {
+                    inlineData: {
+                      mimeType: contractorImagePart.mimeType,
+                      data: contractorImagePart.data,
+                    },
                   },
-                },
-              ],
+                ],
+              },
+            ],
+            config: {
+              systemInstruction: SYSTEM_INSTRUCTION,
+              responseMimeType: "application/json",
+              abortSignal: signal,
             },
-          ],
-          config: {
-            systemInstruction: SYSTEM_INSTRUCTION,
-            responseMimeType: "application/json",
-          },
-        });
+          });
+        }, 15000);
 
         if (modelResponse.text) {
           rawOutputText = modelResponse.text;
@@ -289,11 +330,28 @@ Output strictly valid JSON matching this schema:
         }
       } catch (err: unknown) {
         lastError = err;
-        console.warn(`Audit model ${modelName} call failed, attempting fallback:`, err);
+        logger.warn(`Audit model ${modelName} call failed or timed out, trying fallback`, {
+          ticketId,
+          model: modelName,
+          error: err instanceof Error ? err.message : "Unknown error",
+        });
       }
     }
 
     if (!rawOutputText) {
+      if (isTimeoutError(lastError)) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: {
+              code: "GATEWAY_TIMEOUT",
+              message: "AI verification engine timed out after 15 seconds. Please retry.",
+            },
+          },
+          { status: 504 }
+        );
+      }
+
       throw new Error(
         `Gemini verification models unavailable: ${
           lastError instanceof Error ? lastError.message : "Empty model response"
@@ -301,7 +359,7 @@ Output strictly valid JSON matching this schema:
       );
     }
 
-    // 5. Parse and Validate Model Output via VerificationAuditSchema
+    // 7. Parse and Validate Model Output via VerificationAuditSchema
     let parsedJson: unknown;
     try {
       parsedJson = JSON.parse(rawOutputText);
@@ -314,6 +372,11 @@ Output strictly valid JSON matching this schema:
     const validationResult = VerificationAuditSchema.safeParse(parsedJson);
 
     if (!validationResult.success) {
+      logger.error("Audit schema validation failed", {
+        ticketId,
+        details: validationResult.error.format(),
+      });
+
       return NextResponse.json(
         {
           success: false,
@@ -329,7 +392,7 @@ Output strictly valid JSON matching this schema:
 
     const auditData: VerificationAudit = validationResult.data;
 
-    // 6. Security Decision Gate Enforcement (PRD FR-3.4 & SecurityGuardrails Section 3)
+    // 8. Security Decision Gate Enforcement (PRD FR-3.4 & SecurityGuardrails Section 3)
     let enforcedDecision = auditData.decision;
     if (auditData.confidenceScore >= 70 && auditData.verified) {
       enforcedDecision = "PASS";
@@ -344,7 +407,7 @@ Output strictly valid JSON matching this schema:
       decision: enforcedDecision,
     };
 
-    // 7. Update ticket status in persistence store
+    // 9. Update ticket status in persistence store
     const newStatus: TicketStatus =
       finalAudit.decision === "PASS"
         ? "VERIFIED_RESOLVED"
@@ -362,6 +425,13 @@ Output strictly valid JSON matching this schema:
       auditResult: finalAudit,
     });
 
+    logger.info("Audit verification completed successfully", {
+      ticketId,
+      decision: finalAudit.decision,
+      confidenceScore: finalAudit.confidenceScore,
+      distanceMeters: geofence.distanceMeters,
+    });
+
     return NextResponse.json(
       {
         success: true,
@@ -370,11 +440,32 @@ Output strictly valid JSON matching this schema:
         audit: finalAudit,
         ticket: updatedTicket,
       },
-      { status: 200 }
+      {
+        status: 200,
+        headers: {
+          "X-RateLimit-Limit": rateLimit.limit.toString(),
+          "X-RateLimit-Remaining": rateLimit.remaining.toString(),
+        },
+      }
     );
   } catch (error: unknown) {
+    if (isTimeoutError(error)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: "GATEWAY_TIMEOUT",
+            message: "AI verification engine timed out after 15 seconds. Please retry.",
+          },
+        },
+        { status: 504 }
+      );
+    }
+
     const errorMessage =
       error instanceof Error ? error.message : "An unexpected internal error occurred.";
+
+    logger.error("Audit engine error", { error: errorMessage });
 
     return NextResponse.json(
       {

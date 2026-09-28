@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { ai } from "@/lib/gemini";
+import { ai, withGeminiTimeout, isTimeoutError } from "@/lib/gemini";
 import { IntakeExtractionSchema, IntakeExtraction } from "@/lib/schemas/intake";
 import { createTicket, Ticket, TicketCategory, TicketSeverity } from "@/lib/store";
+import { checkRateLimit } from "@/lib/rate-limit";
+import { validateFileSize, optimizeImageBuffer, MAX_IMAGE_SIZE_BYTES } from "@/lib/image";
+import { logger } from "@/lib/logger";
 
 export const dynamic = "force-dynamic";
 
@@ -60,6 +63,12 @@ function heuristicFallbackExtraction(text: string): IntakeExtraction {
 }
 
 export async function POST(request: NextRequest) {
+  // 1. Sliding-window rate limit: 10 requests per minute per IP
+  const rateLimit = checkRateLimit(request, "tickets_intake", 10, 60000);
+  if (!rateLimit.allowed) {
+    return rateLimit.response!;
+  }
+
   try {
     const formData = await request.formData();
 
@@ -79,12 +88,27 @@ export async function POST(request: NextRequest) {
     const accuracy = accuracyStr ? parseFloat(accuracyStr) : 10;
     const address = (formData.get("address") as string | null) || `Ward ${wardNumber}, Bengaluru, Karnataka`;
 
-    // Hazard photo resolution
+    // 2. Upload Constraints: 5MB ceiling on image and audio payloads
+    if (imageFile && imageFile.size > 0) {
+      const validation = validateFileSize(imageFile, "image", MAX_IMAGE_SIZE_BYTES);
+      if (!validation.valid) {
+        return validation.response!;
+      }
+    }
+
+    if (audioFile && audioFile.size > 0) {
+      const validation = validateFileSize(audioFile, "audio", MAX_IMAGE_SIZE_BYTES);
+      if (!validation.valid) {
+        return validation.response!;
+      }
+    }
+
+    // 3. Photo Resolution & Sharp Image Normalization (max 1600px, 85% JPEG)
     let originalImageUrl = "";
     if (imageFile && imageFile.size > 0) {
       const imgBuffer = Buffer.from(await imageFile.arrayBuffer());
-      const mime = imageFile.type || "image/jpeg";
-      originalImageUrl = `data:${mime};base64,${imgBuffer.toString("base64")}`;
+      const optimized = await optimizeImageBuffer(imgBuffer, imageFile.type || "image/jpeg");
+      originalImageUrl = optimized.dataUri;
     } else {
       // Fallback synthetic SVG if image capture was skipped
       originalImageUrl = `data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='400' height='300' viewBox='0 0 400 300'><rect width='400' height='300' fill='%231e293b'/><circle cx='200' cy='150' r='60' fill='%23f59e0b'/><text x='130' y='155' fill='white' font-family='sans-serif' font-weight='bold' font-size='16'>CIVIC HAZARD</text></svg>`;
@@ -92,35 +116,38 @@ export async function POST(request: NextRequest) {
 
     let extraction: IntakeExtraction | null = null;
 
-    // Process audio via Gemini 1.5 Flash if provided
+    // 4. Process audio via Gemini with 15-second AbortSignal timeout
     if (audioFile && audioFile.size > 0 && process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY !== "your_gemini_api_key_here") {
       try {
         const audioBuffer = Buffer.from(await audioFile.arrayBuffer());
         const audioMime = audioFile.type || "audio/webm";
 
-        const modelResponse = await ai.models.generateContent({
-          model: "gemini-2.5-flash",
-          contents: [
-            {
-              role: "user",
-              parts: [
-                {
-                  text: "Analyze the attached citizen voice recording and extract the required grievance information:",
-                },
-                {
-                  inlineData: {
-                    mimeType: audioMime,
-                    data: audioBuffer.toString("base64"),
+        const modelResponse = await withGeminiTimeout(async (signal) => {
+          return ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: [
+              {
+                role: "user",
+                parts: [
+                  {
+                    text: "Analyze the attached citizen voice recording and extract the required grievance information:",
                   },
-                },
-              ],
+                  {
+                    inlineData: {
+                      mimeType: audioMime,
+                      data: audioBuffer.toString("base64"),
+                    },
+                  },
+                ],
+              },
+            ],
+            config: {
+              systemInstruction: INTAKE_SYSTEM_INSTRUCTION,
+              responseMimeType: "application/json",
+              abortSignal: signal,
             },
-          ],
-          config: {
-            systemInstruction: INTAKE_SYSTEM_INSTRUCTION,
-            responseMimeType: "application/json",
-          },
-        });
+          });
+        }, 15000);
 
         const rawText = modelResponse.text;
         if (rawText) {
@@ -130,8 +157,14 @@ export async function POST(request: NextRequest) {
             extraction = validation.data;
           }
         }
-      } catch (geminiError) {
-        console.warn("Gemini audio extraction fallback engaged:", geminiError);
+      } catch (geminiError: unknown) {
+        if (isTimeoutError(geminiError)) {
+          logger.warn("Voice extraction timed out after 15s; falling back to keyword heuristics", { citizenId });
+        } else {
+          logger.warn("Gemini voice extraction fallback engaged", {
+            error: geminiError instanceof Error ? geminiError.message : "Unknown error",
+          });
+        }
       }
     }
 
@@ -165,15 +198,30 @@ export async function POST(request: NextRequest) {
       slaDeadline,
     });
 
+    logger.info("Successfully processed grievance intake", {
+      ticketId: newTicket.id,
+      category: newTicket.category,
+      severity: newTicket.severity,
+      ward: wardNumber,
+    });
+
     return NextResponse.json(
       {
         success: true,
         ticket: newTicket,
       },
-      { status: 201 }
+      {
+        status: 201,
+        headers: {
+          "X-RateLimit-Limit": rateLimit.limit.toString(),
+          "X-RateLimit-Remaining": rateLimit.remaining.toString(),
+        },
+      }
     );
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Internal error processing grievance intake";
+    logger.error("Intake processing error", { error: message });
+
     return NextResponse.json(
       {
         success: false,
