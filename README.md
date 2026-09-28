@@ -290,6 +290,21 @@ Truth in infrastructure. Accountability for communities. Built with Google Gemin
 - **DPI Interoperability:** Clean REST APIs designed for plug-and-play integration into existing smart city platforms (CPGRAMS, BBMP Sahaaya, Swachhata).
 - **Graceful Multi-Model Failover:** Transparent routing between Gemini 2.5 Pro and Gemini 2.5 Flash guarantees uninterrupted operational uptime.
 
+For comprehensive security specifications, threat vectors, and architectural mitigations, refer to [**`docs/SecurityGuardrails.md`**](docs/SecurityGuardrails.md).
+
+---
+
+## 📚 Project Documentation & Specifications
+
+The engineering specifications, system architecture, product scope, and implementation blueprints are organized in the [`docs/`](docs/) directory:
+
+| Specification Document | Purpose & Scope |
+| :--- | :--- |
+| [**`docs/PRD.md`**](docs/PRD.md) | **Product Requirements Document:** Problem statement, target personas, user journeys, core feature specs, and success metrics. |
+| [**`docs/Design.md`**](docs/Design.md) | **System Architecture & Technical Design:** Dual-image forensic audit pipeline, Gemini prompt chains, DB schema, API contracts, and edge cases. |
+| [**`docs/Build.md`**](docs/Build.md) | **Implementation Roadmap:** Sprint milestones, phased execution strategy, automated test suites, and delivery checklist. |
+| [**`docs/SecurityGuardrails.md`**](docs/SecurityGuardrails.md) | **Security & Guardrails:** Zero-trust geofence validation, rate limiting, anti-tamper protections, and model safety parameters. |
+
 ---
 
 ## 📜 License

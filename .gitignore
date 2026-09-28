@@ -34,3 +34,9 @@ Thumbs.db
 # TypeScript incremental build cache
 *.tsbuildinfo
 tsconfig.tsbuildinfo
+
+# ==========================================
+# INTERNAL AGENT SCAFFOLDING
+# ==========================================
+.agent/
+AGENTS.md
