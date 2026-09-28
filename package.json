@@ -12,7 +12,8 @@
     "test:gemini": "tsx scripts/test-live-gemini.ts",
     "test:audit": "tsx scripts/test-audit.ts",
     "test:phase2": "tsx scripts/test-phase2.ts",
-    "test:phase3": "tsx scripts/test-phase3.ts"
+    "test:phase3": "tsx scripts/test-phase3.ts",
+    "test:concurrency": "tsx scripts/test-concurrency.ts"
   },
   "repository": {
     "type": "git",
